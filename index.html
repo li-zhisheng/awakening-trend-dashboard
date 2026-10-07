@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0d1114">
+  <link rel="icon" href="data:,">
+  <title>多空指标 · 历史回测与实盘验证</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="echarts.min.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">↕</span>
+      <div>
+        <div class="eyebrow">AWAKENING / TREND SYSTEM</div>
+        <h1>多空指标</h1>
+      </div>
+    </div>
+    <div class="header-status">
+      <span id="live-state" class="status-dot">读取中</span>
+      <span id="generated-at">--</span>
+      <button id="refresh" type="button">刷新数据</button>
+    </div>
+  </header>
+
+  <nav class="view-tabs" aria-label="多空指标数据视图">
+    <button class="active" data-view="overview" type="button">总览</button>
+    <button data-view="stocks" type="button">个股回测</button>
+    <button data-view="paper" type="button">实盘模拟</button>
+    <button data-view="research" type="button">信号研究</button>
+    <button data-view="contracts" type="button">数据口径</button>
+  </nav>
+
+  <main>
+    <section id="view-overview" class="view active">
+      <div id="overview-kpis" class="kpi-grid" aria-live="polite"></div>
+      <div class="chart-grid">
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div><h2>月度收益</h2><p>强信号与强弱全部参与对比</p></div>
+          </div>
+          <div id="monthly-chart" class="chart"></div>
+        </section>
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div><h2>累计净值</h2><p>强信号逐月复合路径</p></div>
+          </div>
+          <div id="nav-chart" class="chart"></div>
+        </section>
+      </div>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>月份明细</h2><p>收益、信号、交易和月末持仓</p></div>
+        </div>
+        <div class="table-wrap"><table id="monthly-table"></table></div>
+      </section>
+    </section>
+
+    <section id="view-stocks" class="view">
+      <div class="toolbar">
+        <label>搜索股票<input id="stock-search" type="search" placeholder="代码或名称"></label>
+        <label>收益状态<select id="stock-return-filter">
+          <option value="all">全部</option>
+          <option value="profit">盈利</option>
+          <option value="loss">亏损</option>
+          <option value="holding">期末持仓</option>
+        </select></label>
+        <label>排序<select id="stock-sort">
+          <option value="return_desc">年度收益从高到低</option>
+          <option value="return_asc">年度收益从低到高</option>
+          <option value="trades_desc">交易次数从多到少</option>
+          <option value="drawdown_asc">最大浮亏从大到小</option>
+        </select></label>
+        <span id="stock-count" class="toolbar-count">--</span>
+      </div>
+      <section class="panel">
+        <div class="table-wrap stock-table-wrap">
+          <table id="stock-table"></table>
+        </div>
+        <div class="pagination">
+          <button id="stock-prev" type="button">上一页</button>
+          <span id="stock-page">--</span>
+          <button id="stock-next" type="button">下一页</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="view-paper" class="view">
+      <div id="paper-kpis" class="kpi-grid"></div>
+      <section class="status-band">
+        <div><span>运行状态</span><strong id="paper-status">--</strong></div>
+        <div><span>最近快照</span><strong id="paper-snapshot">--</strong></div>
+        <div><span>下一交易日</span><strong id="paper-next-day">--</strong></div>
+        <div><span>成交契约</span><strong id="paper-contract">--</strong></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>当前持仓与异常账户</h2><p>仅显示持仓、待卖、停牌或异常状态</p></div>
+        </div>
+        <div class="table-wrap"><table id="paper-stocks"></table></div>
+      </section>
+      <div class="split-grid">
+        <section class="panel">
+          <div class="panel-head"><div><h2>最近成交</h2><p>下一次独立盘口模拟</p></div></div>
+          <div class="table-wrap"><table id="paper-fills"></table></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><h2>最近信号</h2><p>强弱多空原始信号留痕</p></div></div>
+          <div class="table-wrap"><table id="paper-signals"></table></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-research" class="view">
+      <div id="research-kpis" class="kpi-grid"></div>
+      <div class="chart-grid">
+        <section class="panel chart-panel">
+          <div class="panel-head"><div><h2>三种入场价格</h2><p>同名单、同卖点的配对比较</p></div></div>
+          <div id="entry-chart" class="chart"></div>
+        </section>
+        <section class="panel chart-panel">
+          <div class="panel-head"><div><h2>提前空点</h2><p>原空点与预警候选月度路径</p></div></div>
+          <div id="exit-chart" class="chart"></div>
+        </section>
+      </div>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>首次多头赢家识别</h2><p>09:35 先选 3 只，后续两批各保留 1 个名额</p></div>
+        </div>
+        <div class="table-wrap"><table id="winner-table"></table></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>分钟级会计验收</h2><p>真实缓存路径、T+1、整手与非负现金</p></div>
+        </div>
+        <div id="validation-detail" class="definition-grid"></div>
+      </section>
+    </section>
+
+    <section id="view-contracts" class="view">
+      <section class="panel">
+        <div class="panel-head"><div><h2>信号与成交口径</h2><p>历史回测、研究代理与实时模拟严格分离</p></div></div>
+        <div id="contract-list" class="definition-grid"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>数据源状态</h2><p>每项数据的更新时间、体积和可用性</p></div></div>
+        <div class="table-wrap"><table id="source-table"></table></div>
+      </section>
+      <section class="panel warning-panel">
+        <h2>生产边界</h2>
+        <p>多头潜力榜和提前空点均为研究/影子结果，不控制真实交易。实时模拟账户与券商、手机和真实下单接口完全隔离。</p>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="stock-dialog">
+    <div class="dialog-head">
+      <div><h2 id="stock-dialog-title">个股详情</h2><p id="stock-dialog-meta"></p></div>
+      <button id="stock-dialog-close" type="button" aria-label="关闭">×</button>
+    </div>
+    <div id="stock-detail-chart" class="chart detail-chart"></div>
+    <div class="split-grid">
+      <section><h3>月度收益</h3><div class="table-wrap"><table id="stock-monthly"></table></div></section>
+      <section><h3>分钟买卖点</h3><div class="table-wrap"><table id="stock-executions"></table></div></section>
+    </div>
+  </dialog>
+
+  <footer>多空指标独立研究站 · 与模型选股策略数据完全分离</footer>
+</body>
+</html>
