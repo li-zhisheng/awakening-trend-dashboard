@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261008-percent-axis">
+  <link rel="stylesheet" href="styles.css?v=20261008-ma-nav">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261008-percent-axis" defer></script>
+  <script src="app.js?v=20261008-ma-nav" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -218,9 +218,13 @@
         <button id="stock-daily-tab" class="active" type="button" role="tab" aria-selected="true">日K</button>
         <button id="stock-minute-tab" type="button" role="tab" aria-selected="false">分时</button>
       </div>
-      <label id="stock-minute-date-wrap" hidden>信号日
-        <select id="stock-minute-date" aria-label="选择多空信号交易日"></select>
-      </label>
+      <div id="stock-minute-nav" hidden>
+        <button id="stock-minute-prev" type="button" aria-label="上一交易日" title="上一交易日">‹</button>
+        <label id="stock-minute-date-wrap">交易日
+          <select id="stock-minute-date" aria-label="选择分时交易日"></select>
+        </label>
+        <button id="stock-minute-next" type="button" aria-label="下一交易日" title="下一交易日">›</button>
+      </div>
       <span id="stock-market-status">正在读取行情数据</span>
     </div>
     <div id="stock-detail-chart" class="chart stock-market-chart"></div>

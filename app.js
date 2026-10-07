@@ -92,6 +92,17 @@
     };
   }
 
+  function movingAverage(values, period) {
+    let sum = 0;
+    return values.map((value, index) => {
+      sum += Number(value);
+      if (index >= period) sum -= Number(values[index - period]);
+      return index >= period - 1
+        ? Number((sum / period).toFixed(4))
+        : null;
+    });
+  }
+
   function renderHeader() {
     $('#generated-at').textContent = `数据生成 ${dt(DATA.generated_at)}`;
     const health = DATA.paper?.health || {};
@@ -477,12 +488,17 @@
     const daily = state.daily;
     const bars = daily.bars;
     const dates = bars.map(row => row[0]);
+    const closes = bars.map(row => Number(row[4]));
+    const ma5 = movingAverage(closes, 5);
+    const ma10 = movingAverage(closes, 10);
+    const ma20 = movingAverage(closes, 20);
     const marks = stockDailyMarks(daily);
     const start = Math.max(0, 100 - (80 / bars.length) * 100);
     const instance = chart('stock-detail-chart', {
       animation: false,
       legend: {
-        top: 2, right: 12, data: ['日K', '成交量'],
+        top: 2, right: 12,
+        data: ['MA5', 'MA10', 'MA20'],
         textStyle: { color: '#94a3a8' },
       },
       tooltip: {
@@ -491,8 +507,16 @@
           const index = items[0]?.dataIndex;
           const row = bars[index];
           if (!row) return '暂无数据';
+          const averages = [
+            ['MA5', ma5[index]],
+            ['MA10', ma10[index]],
+            ['MA20', ma20[index]],
+          ].filter(item => item[1] != null)
+            .map(item => `${item[0]} ${num(item[1], 2)}`)
+            .join('　');
           return `${esc(row[0])}<br>开 ${num(row[1], 3)}　收 ${num(row[4], 3)}`
             + `<br>高 ${num(row[2], 3)}　低 ${num(row[3], 3)}`
+            + (averages ? `<br>${averages}` : '')
             + `<br>成交量 ${num(row[5])}`;
         },
       },
@@ -554,6 +578,24 @@
           markPoint: { silent: true, data: marks },
         },
         {
+          name: 'MA5', type: 'line', data: ma5,
+          showSymbol: false, connectNulls: false,
+          lineStyle: { width: 1.4, color: '#e5b94f' },
+          itemStyle: { color: '#e5b94f' },
+        },
+        {
+          name: 'MA10', type: 'line', data: ma10,
+          showSymbol: false, connectNulls: false,
+          lineStyle: { width: 1.4, color: '#55c5c7' },
+          itemStyle: { color: '#55c5c7' },
+        },
+        {
+          name: 'MA20', type: 'line', data: ma20,
+          showSymbol: false, connectNulls: false,
+          lineStyle: { width: 1.4, color: '#c084fc' },
+          itemStyle: { color: '#c084fc' },
+        },
+        {
           name: '成交量', type: 'bar',
           xAxisIndex: 1, yAxisIndex: 1,
           data: bars.map(row => ({
@@ -596,6 +638,8 @@
       `${point[0].slice(0, 2)}:${point[0].slice(2)}`);
     const prices = points.map(point => Number(point[1]));
     const volumes = points.map(point => Number(point[2]));
+    const ma5 = movingAverage(prices, 5);
+    const ma10 = movingAverage(prices, 10);
     const span = Math.max(
       previousClose * 0.003,
       ...prices.map(price => Math.abs(price - previousClose)),
@@ -651,6 +695,11 @@
     ].includes(index);
     chart('stock-detail-chart', {
       animation: false,
+      legend: {
+        top: 2, right: 12,
+        data: ['价格', 'MA5', 'MA10'],
+        textStyle: { color: '#94a3a8' },
+      },
       tooltip: {
         trigger: 'axis', confine: true,
         formatter: items => {
@@ -659,8 +708,14 @@
           const change = (
             Number(price.value) / previousClose - 1
           ) * 100;
+          const averages = items
+            .filter(item => item.seriesName.startsWith('MA'))
+            .map(item =>
+              `${item.seriesName} ${num(item.value, 2)}`)
+            .join('　');
           return `${date} ${price.axisValue}<br>价格 ${num(price.value, 2)}`
-            + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+            + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
+            + (averages ? `<br>${averages}` : '');
         },
       },
       grid: [
@@ -725,6 +780,18 @@
           },
         },
         {
+          name: 'MA5', type: 'line', data: ma5,
+          showSymbol: false, connectNulls: false,
+          lineStyle: { width: 1.3, color: '#e5b94f' },
+          itemStyle: { color: '#e5b94f' },
+        },
+        {
+          name: 'MA10', type: 'line', data: ma10,
+          showSymbol: false, connectNulls: false,
+          lineStyle: { width: 1.3, color: '#55c5c7' },
+          itemStyle: { color: '#55c5c7' },
+        },
+        {
           name: '成交量', type: 'bar',
           xAxisIndex: 1, yAxisIndex: 1,
           data: volumes.map((value, index) => ({
@@ -747,6 +814,30 @@
       `${date} 前复权5分钟 · 昨收 ${num(previousClose, 3)} · ${labels.join(' · ')}`;
   }
 
+  function syncStockMinuteNavigation() {
+    const state = stockMarketState;
+    const dates = state
+      ? [...state.minuteByDate.keys()].sort()
+      : [];
+    const index = dates.indexOf(state?.date);
+    $('#stock-minute-prev').disabled = index <= 0;
+    $('#stock-minute-next').disabled =
+      index < 0 || index >= dates.length - 1;
+  }
+
+  function moveStockMinuteDate(offset) {
+    const state = stockMarketState;
+    if (!state) return;
+    const dates = [...state.minuteByDate.keys()].sort();
+    const index = dates.indexOf(state.date);
+    const target = dates[index + offset];
+    if (!target) return;
+    state.date = target;
+    $('#stock-minute-date').value = target;
+    renderStockMinute();
+    syncStockMinuteNavigation();
+  }
+
   async function ensureStockMinutes(state) {
     if (state.minute) return true;
     if (!state.minutePromise) {
@@ -763,6 +854,7 @@
       $('#stock-minute-date').innerHTML = dates.map(day =>
         `<option value="${esc(day)}">${esc(day)}</option>`).join('');
       $('#stock-minute-date').value = state.date;
+      syncStockMinuteNavigation();
       if (!dates.length) {
         $('#stock-market-status').textContent =
           '该股票没有可用的历史分时';
@@ -789,7 +881,7 @@
       button.classList.toggle('active', active);
       button.setAttribute('aria-selected', String(active));
     }
-    $('#stock-minute-date-wrap').hidden = view !== 'minute';
+    $('#stock-minute-nav').hidden = view !== 'minute';
     if (view === 'daily') {
       renderStockDaily();
     } else {
@@ -800,6 +892,7 @@
       if (!(state.minute || await ensureStockMinutes(state))) return;
       if (stockMarketState !== state || state.view !== 'minute') return;
       renderStockMinute();
+      syncStockMinuteNavigation();
     }
     charts.get('stock-detail-chart')?.resize();
     requestAnimationFrame(() =>
@@ -824,7 +917,8 @@
     };
     $('#stock-market-status').textContent = '正在读取日K';
     $('#stock-minute-date').innerHTML = '';
-    $('#stock-minute-date-wrap').hidden = true;
+    $('#stock-minute-nav').hidden = true;
+    syncStockMinuteNavigation();
     $('#stock-minute-tab').disabled = false;
     $('#stock-dialog').showModal();
     charts.get('stock-detail-chart')?.clear();
@@ -1073,10 +1167,15 @@
       'click', () => setStockMarketView('daily'));
     $('#stock-minute-tab').addEventListener(
       'click', () => setStockMarketView('minute'));
+    $('#stock-minute-prev').addEventListener(
+      'click', () => moveStockMinuteDate(-1));
+    $('#stock-minute-next').addEventListener(
+      'click', () => moveStockMinuteDate(1));
     $('#stock-minute-date').addEventListener('change', event => {
       if (!stockMarketState) return;
       stockMarketState.date = event.target.value;
       renderStockMinute();
+      syncStockMinuteNavigation();
     });
     $('#stock-dialog-close').addEventListener('click', () => $('#stock-dialog').close());
     $('#stock-dialog').addEventListener('close', () => {

@@ -150,10 +150,14 @@ dialog::backdrop{background:rgba(0,0,0,.72)}
 .segmented{display:flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
 .segmented button{border:0;border-radius:0;background:#182126;color:var(--muted)}
 .segmented button.active{background:#25666b;color:#fff}
+#stock-minute-nav{display:flex;align-items:center;gap:6px}
+#stock-minute-nav[hidden]{display:none}
+#stock-minute-nav>button{
+  width:36px;height:36px;padding:0;font-size:22px;line-height:1;
+}
 #stock-minute-date-wrap{
   display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;
 }
-#stock-minute-date-wrap[hidden]{display:none}
 #stock-market-status{margin-left:auto;color:var(--muted);font-size:12px}
 .stock-market-chart{height:420px}
 footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--line)}
@@ -185,7 +189,8 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   .candidate-toolbar .toolbar-count{width:100%}
   .hash-label{text-align:left}
   .stock-market-toolbar{align-items:stretch}
-  #stock-minute-date-wrap{width:100%}
+  #stock-minute-nav{width:100%}
+  #stock-minute-date-wrap{min-width:0;flex:1}
   #stock-minute-date{min-width:0;flex:1}
   #stock-market-status{width:100%;margin-left:0}
   .stock-market-chart{height:340px}
