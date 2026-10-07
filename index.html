@@ -200,7 +200,17 @@
       <div><h2 id="stock-dialog-title">个股详情</h2><p id="stock-dialog-meta"></p></div>
       <button id="stock-dialog-close" type="button" aria-label="关闭">×</button>
     </div>
-    <div id="stock-detail-chart" class="chart detail-chart"></div>
+    <div class="stock-market-toolbar">
+      <div class="segmented" role="tablist" aria-label="行情周期">
+        <button id="stock-daily-tab" class="active" type="button" role="tab" aria-selected="true">日K</button>
+        <button id="stock-minute-tab" type="button" role="tab" aria-selected="false">分时</button>
+      </div>
+      <label id="stock-minute-date-wrap" hidden>信号日
+        <select id="stock-minute-date" aria-label="选择多空信号交易日"></select>
+      </label>
+      <span id="stock-market-status">正在读取行情数据</span>
+    </div>
+    <div id="stock-detail-chart" class="chart stock-market-chart"></div>
     <div class="split-grid">
       <section><h3>月度收益</h3><div class="table-wrap"><table id="stock-monthly"></table></div></section>
       <section><h3>分钟买卖点</h3><div class="table-wrap"><table id="stock-executions"></table></div></section>

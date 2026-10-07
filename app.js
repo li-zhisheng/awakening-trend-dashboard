@@ -4,9 +4,12 @@
   let DATA = null;
   let PAPER = null;
   let STOCKS = null;
+  let stockMarketState = null;
   let stockPage = 1;
   const pageSize = 80;
   const charts = new Map();
+  const stockDailyCache = new Map();
+  const stockMinuteCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
 
   const $ = (selector) => document.querySelector(selector);
@@ -53,10 +56,11 @@
 
   function chart(id, option) {
     const node = document.getElementById(id);
-    if (!node || !window.echarts) return;
+    if (!node || !window.echarts) return null;
     const instance = charts.get(id) || echarts.init(node);
     charts.set(id, instance);
     instance.setOption(option, true);
+    return instance;
   }
 
   function axisBase() {
@@ -191,7 +195,8 @@
       const selection = item.selection;
       const outcome = item.evaluation || {};
       return `<tr><td>${esc(selection.signal_time)}</td>
-        <td>${esc(selection.code)}</td><td>${esc(selection.name)}</td>
+        <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
+        <td>${esc(selection.name)}</td>
         <td class="neutral">${selection.strength === 'strong' ? '强多' : '弱多'}</td>
         <td>${num(selection.score, 3)}</td>
         <td>${pct(selection.volatility_5_rank, 0)}</td>
@@ -203,6 +208,9 @@
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
     }).join('') : emptyRow(13, day ? '当日没有股票通过高质量启动规则' : '该日期没有交易日样本')}</tbody>`;
+    document.querySelectorAll('.candidate-stock-link').forEach(button => {
+      button.addEventListener('click', () => openStock(button.dataset.code));
+    });
   }
 
   function renderCandidates() {
@@ -310,7 +318,7 @@
       <td class="down">${pct(row.max_month_end_drawdown)}</td><td>${pct(row.win_rate)}</td>
       <td>${num(row.buy_count)}</td><td>${num(row.sell_count)}</td><td>${num(row.closed_trades)}</td>
       <td>${row.holding_end ? '持仓' : '现金'}</td></tr>`).join('') : emptyRow(9)}</tbody>`;
-    document.querySelectorAll('.stock-link').forEach(button => {
+    document.querySelectorAll('#stock-table .stock-link').forEach(button => {
       button.addEventListener('click', () => openStock(button.dataset.code));
     });
   }
@@ -320,6 +328,353 @@
       STOCKS = await loadFirst(dataPaths('api/stocks', 'stocks.json'));
     }
     return STOCKS;
+  }
+
+  async function loadStockDaily(code) {
+    if (!stockDailyCache.has(code)) {
+      const value = await loadFirst([
+        `stocks/${code.slice(0, 2)}/${code}.json`,
+      ]);
+      if (
+        value.schema !== 'awakening-stock-daily-v1'
+        || value.code !== code
+        || !Array.isArray(value.bars)
+        || !value.bars.length
+      ) {
+        throw new Error('日K数据不完整');
+      }
+      stockDailyCache.set(code, value);
+    }
+    return stockDailyCache.get(code);
+  }
+
+  async function loadStockMinutes(code) {
+    if (!stockMinuteCache.has(code)) {
+      const value = await loadFirst([
+        `minutes/${code.slice(0, 2)}/${code}.json`,
+      ]);
+      if (
+        value.schema !== 'awakening-trend-signal-minutes-v1'
+        || value.code !== code
+        || !Array.isArray(value.days)
+      ) {
+        throw new Error('分时数据不完整');
+      }
+      stockMinuteCache.set(code, value);
+    }
+    return stockMinuteCache.get(code);
+  }
+
+  function stockDailyMarks(daily) {
+    const build = (rows, strength) => (rows || []).map(item => {
+      const index = Number(item[0]);
+      const direction = Number(item[1]);
+      const probability = Number(item[2]);
+      const bar = daily.bars[index];
+      if (!bar || ![1, -1].includes(direction)) return null;
+      const long = direction === 1;
+      return {
+        name: strength === 'strong'
+          ? (long ? '强多' : '强空')
+          : (long ? '弱多' : '弱空'),
+        coord: [index, long ? Number(bar[3]) : Number(bar[2])],
+        value: long ? '多' : '空',
+        symbol: strength === 'strong' ? 'circle' : 'emptyCircle',
+        symbolSize: strength === 'strong' ? 28 : 22,
+        symbolOffset: [0, long ? '68%' : '-68%'],
+        itemStyle: {
+          color: long ? '#ef6666' : '#3fc28b',
+          borderColor: '#101619',
+          borderWidth: strength === 'strong' ? 2 : 1,
+          opacity: strength === 'strong' ? 1 : 0.78,
+        },
+        label: {
+          show: true,
+          color: '#ffffff',
+          fontSize: strength === 'strong' ? 11 : 9,
+          fontWeight: 700,
+          formatter: long ? '多' : '空',
+        },
+        probability,
+      };
+    }).filter(Boolean);
+    return [
+      ...build(daily.signals, 'strong'),
+      ...build(daily.filtered_signals, 'weak'),
+    ];
+  }
+
+  function renderStockDaily() {
+    const state = stockMarketState;
+    if (!state?.daily) return;
+    const daily = state.daily;
+    const bars = daily.bars;
+    const dates = bars.map(row => row[0]);
+    const marks = stockDailyMarks(daily);
+    const start = Math.max(0, 100 - (80 / bars.length) * 100);
+    const instance = chart('stock-detail-chart', {
+      animation: false,
+      legend: {
+        top: 2, right: 12, data: ['日K', '成交量'],
+        textStyle: { color: '#94a3a8' },
+      },
+      tooltip: {
+        trigger: 'axis', confine: true,
+        formatter: items => {
+          const index = items[0]?.dataIndex;
+          const row = bars[index];
+          if (!row) return '暂无数据';
+          return `${esc(row[0])}<br>开 ${num(row[1], 3)}　收 ${num(row[4], 3)}`
+            + `<br>高 ${num(row[2], 3)}　低 ${num(row[3], 3)}`
+            + `<br>成交量 ${num(row[5])}`;
+        },
+      },
+      axisPointer: { link: [{ xAxisIndex: 'all' }] },
+      grid: [
+        { left: 58, right: 18, top: 42, height: '58%' },
+        { left: 58, right: 18, top: '75%', height: '11%' },
+      ],
+      xAxis: [
+        {
+          ...axisBase(), type: 'category', data: dates,
+          boundaryGap: true, axisLabel: { show: false },
+        },
+        {
+          ...axisBase(), type: 'category', gridIndex: 1,
+          data: dates, boundaryGap: true,
+          axisLabel: {
+            color: '#94a3a8', hideOverlap: true,
+            formatter: value => value.slice(5),
+          },
+        },
+      ],
+      yAxis: [
+        {
+          ...axisBase(), type: 'value', scale: true,
+          axisLabel: { formatter: value => Number(value).toFixed(2) },
+        },
+        {
+          ...axisBase(), type: 'value', scale: true, gridIndex: 1,
+          axisLabel: {
+            formatter: value => value >= 1e8
+              ? `${(value / 1e8).toFixed(1)}亿`
+              : value >= 1e4 ? `${(value / 1e4).toFixed(0)}万` : value,
+          },
+        },
+      ],
+      dataZoom: [
+        { type: 'inside', xAxisIndex: [0, 1], start, end: 100 },
+        {
+          type: 'slider', xAxisIndex: [0, 1],
+          height: 18, bottom: 2, start, end: 100,
+          borderColor: '#344149',
+          backgroundColor: '#101619',
+          fillerColor: 'rgba(85,197,199,.12)',
+          textStyle: { color: '#94a3a8' },
+        },
+      ],
+      series: [
+        {
+          name: '日K', type: 'candlestick',
+          data: bars.map(row => [
+            Number(row[1]), Number(row[4]),
+            Number(row[3]), Number(row[2]),
+          ]),
+          itemStyle: {
+            color: '#ef6666', color0: '#3fc28b',
+            borderColor: '#ef6666', borderColor0: '#3fc28b',
+          },
+          markPoint: { silent: true, data: marks },
+        },
+        {
+          name: '成交量', type: 'bar',
+          xAxisIndex: 1, yAxisIndex: 1,
+          data: bars.map(row => ({
+            value: Number(row[5]),
+            itemStyle: {
+              color: Number(row[4]) >= Number(row[1])
+                ? 'rgba(239,102,102,.55)'
+                : 'rgba(63,194,139,.55)',
+            },
+          })),
+        },
+      ],
+    });
+    instance?.off('click');
+    instance?.on('click', params => {
+      const day = dates[params.dataIndex];
+      if (!day || !state.minuteByDate.has(day)) return;
+      state.date = day;
+      $('#stock-minute-date').value = day;
+      setStockMarketView('minute');
+    });
+    const strong = marks.filter(mark =>
+      mark.name.startsWith('强')).length;
+    const weak = marks.length - strong;
+    $('#stock-market-status').textContent =
+      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 点击信号K线查看分时`;
+  }
+
+  function renderStockMinute() {
+    const state = stockMarketState;
+    const day = state?.minuteByDate.get(state.date);
+    if (!state || !day) {
+      $('#stock-market-status').textContent =
+        '该股票没有可用的历史信号日分时';
+      charts.get('stock-detail-chart')?.clear();
+      return;
+    }
+    const [date, previousClose, points, marks] = day;
+    const times = points.map(point =>
+      `${point[0].slice(0, 2)}:${point[0].slice(2)}`);
+    const prices = points.map(point => Number(point[1]));
+    const volumes = points.map(point => Number(point[2]));
+    const span = Math.max(
+      previousClose * 0.003,
+      ...prices.map(price => Math.abs(price - previousClose)),
+    ) * 1.12;
+    const markPoints = marks.map(mark => {
+      const time = `${mark[0].slice(0, 2)}:${mark[0].slice(2)}`;
+      const index = times.indexOf(time);
+      const long = Number(mark[1]) === 1;
+      const weak = mark[2] === 'weak';
+      return {
+        name: weak
+          ? (long ? '弱多买入' : '弱空卖出')
+          : (long ? '多头买入' : '空头卖出'),
+        coord: [index, Number(mark[4])],
+        value: weak
+          ? (long ? '弱买' : '弱卖')
+          : (long ? '买' : '卖'),
+        symbol: weak ? 'circle' : 'pin',
+        symbolSize: weak ? 32 : 42,
+        symbolOffset: [0, long ? '-45%' : '45%'],
+        itemStyle: {
+          color: weak
+            ? '#101619'
+            : (long ? '#ef6666' : '#3fc28b'),
+          borderColor: long ? '#ef6666' : '#3fc28b',
+          borderWidth: 2,
+        },
+        label: {
+          show: true,
+          color: weak
+            ? (long ? '#ef6666' : '#3fc28b')
+            : '#ffffff',
+          fontSize: weak ? 9 : 11, fontWeight: 700,
+          formatter: weak
+            ? (long ? '弱买' : '弱卖')
+            : (long ? '买' : '卖'),
+        },
+      };
+    });
+    const ticks = index => [
+      0, 11, 24, 35, 47,
+    ].includes(index);
+    chart('stock-detail-chart', {
+      animation: false,
+      tooltip: {
+        trigger: 'axis', confine: true,
+        formatter: items => {
+          const price = items.find(item => item.seriesName === '价格');
+          if (!price) return '暂无数据';
+          const change = (
+            Number(price.value) / previousClose - 1
+          ) * 100;
+          return `${date} ${price.axisValue}<br>价格 ${num(price.value, 4)}`
+            + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+        },
+      },
+      grid: [
+        { left: 58, right: 18, top: 34, height: '60%' },
+        { left: 58, right: 18, top: '76%', height: '11%' },
+      ],
+      xAxis: [
+        {
+          ...axisBase(), type: 'category', data: times,
+          boundaryGap: false,
+          axisLabel: {
+            color: '#94a3a8',
+            interval: ticks,
+            formatter: value => value,
+          },
+        },
+        {
+          ...axisBase(), type: 'category', gridIndex: 1,
+          data: times, boundaryGap: true,
+          axisLabel: { show: false },
+        },
+      ],
+      yAxis: [
+        {
+          ...axisBase(), type: 'value',
+          min: Math.max(0.01, previousClose - span),
+          max: previousClose + span,
+          axisLabel: { formatter: value => Number(value).toFixed(2) },
+        },
+        {
+          ...axisBase(), type: 'value', gridIndex: 1,
+          axisLabel: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: '价格', type: 'line', data: prices,
+          showSymbol: false, connectNulls: false,
+          lineStyle: { width: 2, color: '#78a8e8' },
+          itemStyle: { color: '#78a8e8' },
+          areaStyle: { color: 'rgba(120,168,232,.08)' },
+          markPoint: { data: markPoints },
+          markLine: {
+            silent: true, symbol: 'none',
+            lineStyle: { type: 'dashed', color: '#e5b94f' },
+            label: {
+              show: true, position: 'start',
+              color: '#e5b94f',
+              formatter: Number(previousClose).toFixed(2),
+            },
+            data: [{ yAxis: Number(previousClose) }],
+          },
+        },
+        {
+          name: '成交量', type: 'bar',
+          xAxisIndex: 1, yAxisIndex: 1,
+          data: volumes.map((value, index) => ({
+            value,
+            itemStyle: {
+              color: prices[index] >= previousClose
+                ? 'rgba(239,102,102,.52)'
+                : 'rgba(63,194,139,.52)',
+            },
+          })),
+        },
+      ],
+    });
+    const labels = marks.map(mark => {
+      const direction = Number(mark[1]) === 1 ? '多买入' : '空卖出';
+      const strength = mark[2] === 'strong' ? '强' : '弱';
+      return `${mark[0].slice(0, 2)}:${mark[0].slice(2)} ${strength}${direction}`;
+    });
+    $('#stock-market-status').textContent =
+      `${date} 前复权5分钟 · 昨收 ${num(previousClose, 3)} · ${labels.join(' · ')}`;
+  }
+
+  function setStockMarketView(view) {
+    const state = stockMarketState;
+    if (!state || !['daily', 'minute'].includes(view)) return;
+    state.view = view;
+    for (const name of ['daily', 'minute']) {
+      const button = $(`#stock-${name}-tab`);
+      const active = name === view;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    }
+    $('#stock-minute-date-wrap').hidden = view !== 'minute';
+    requestAnimationFrame(() => {
+      if (view === 'daily') renderStockDaily();
+      else renderStockMinute();
+      charts.get('stock-detail-chart')?.resize();
+    });
   }
 
   async function openStock(code) {
@@ -339,18 +694,44 @@
       <tbody>${executions.length ? executions.slice().reverse().map(item => `<tr>
       <td>${esc(item[0])}</td><td>${esc(item[1])}</td><td class="${item[2] > 0 ? 'up' : 'down'}">${item[2] > 0 ? '多头买入' : '空头卖出'}</td>
       <td>${num(item[3], 4)}</td><td>${esc(item[4])}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
+    stockMarketState = {
+      code, name: row.name, daily: null, minute: null,
+      minuteByDate: new Map(), view: 'daily', date: '',
+    };
+    $('#stock-market-status').textContent = '正在读取日K和信号日分时';
+    $('#stock-minute-date').innerHTML = '';
+    $('#stock-minute-date-wrap').hidden = true;
+    $('#stock-minute-tab').disabled = true;
     $('#stock-dialog').showModal();
-    requestAnimationFrame(() => {
-      chart('stock-detail-chart', {
-        animation: false, tooltip: { trigger: 'axis' },
-        grid: { left: 52, right: 18, top: 22, bottom: 34 },
-        xAxis: { ...axisBase(), type: 'category', data: months.map(x => x.month.slice(5)) },
-        yAxis: { ...axisBase(), type: 'value', axisLabel: { formatter: v => `${(v * 100).toFixed(0)}%` } },
-        series: [{ type: 'bar', data: months.map(x => ({
-          value: x.return, itemStyle: { color: x.return >= 0 ? '#ef6666' : '#3fc28b' },
-        })) }],
-      });
-    });
+    charts.get('stock-detail-chart')?.clear();
+    const state = stockMarketState;
+    const [dailyResult, minuteResult] = await Promise.allSettled([
+      loadStockDaily(code),
+      loadStockMinutes(code),
+    ]);
+    if (stockMarketState !== state) return;
+    if (dailyResult.status === 'fulfilled') {
+      state.daily = dailyResult.value;
+    }
+    if (minuteResult.status === 'fulfilled') {
+      state.minute = minuteResult.value;
+      state.minuteByDate = new Map(
+        state.minute.days.map(day => [day[0], day]));
+      const dates = [...state.minuteByDate.keys()].sort();
+      state.date = dates.at(-1) || '';
+      $('#stock-minute-date').innerHTML = dates.map(date =>
+        `<option value="${esc(date)}">${esc(date)}</option>`).join('');
+      $('#stock-minute-date').value = state.date;
+      $('#stock-minute-tab').disabled = !dates.length;
+    } else {
+      $('#stock-minute-tab').disabled = true;
+    }
+    if (!state.daily) {
+      $('#stock-market-status').textContent =
+        '日K数据不可用；该股票暂时无法绘图';
+      return;
+    }
+    setStockMarketView('daily');
   }
 
   function renderPaper() {
@@ -474,6 +855,7 @@
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
       ['触发价格口径', DATA.intraday_replay?.price_contract],
+      ['个股图表', `前复权日K + ${num(DATA.chart_assets?.signal_day_count)} 个强弱信号日5分钟分时`],
     ];
     $('#contract-list').innerHTML = items.map(([label, value]) =>
       `<div class="definition"><span>${esc(label)}</span><strong>${esc(value || '—')}</strong></div>`).join('');
@@ -486,6 +868,7 @@
       entry_price: '入场价格', winner_shadow: '即时影子',
       daily_candidates: '每日待定票',
       candidate_accounts: '候选账户对照',
+      chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
       `<tr><td>${esc(labels[key] || key)}</td><td class="${value.available ? 'neutral' : 'down'}">${value.available ? '可用' : '缺失'}</td>
@@ -515,7 +898,20 @@
       'click', () => moveCandidateDate(-1));
     $('#candidate-next').addEventListener(
       'click', () => moveCandidateDate(1));
+    $('#stock-daily-tab').addEventListener(
+      'click', () => setStockMarketView('daily'));
+    $('#stock-minute-tab').addEventListener(
+      'click', () => setStockMarketView('minute'));
+    $('#stock-minute-date').addEventListener('change', event => {
+      if (!stockMarketState) return;
+      stockMarketState.date = event.target.value;
+      renderStockMinute();
+    });
     $('#stock-dialog-close').addEventListener('click', () => $('#stock-dialog').close());
+    $('#stock-dialog').addEventListener('close', () => {
+      stockMarketState = null;
+      charts.get('stock-detail-chart')?.off('click');
+    });
     $('#refresh').addEventListener('click', () => location.reload());
     window.addEventListener('resize', () => charts.forEach(instance => instance.resize()));
   }
