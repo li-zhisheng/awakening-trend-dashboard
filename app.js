@@ -163,7 +163,7 @@
     const evaluation = day?.evaluation || {};
     $('#candidate-kpis').innerHTML = [
       kpi('当日待定票', `${num(day?.candidate_count || 0)} 只`,
-        '不强制占满名额'),
+        `强多 ${num(day?.strong_candidate_count || 0)} · 弱多 ${num(day?.weak_candidate_count || 0)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         '信号时间不晚于 10:00'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
@@ -183,7 +183,7 @@
       censored: '后续样本不足',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号</th><th>代码</th><th>名称</th><th>画像分</th>
+      <th>信号</th><th>代码</th><th>名称</th><th>强弱</th><th>画像分</th>
       <th>5日波动排名</th><th>20日波动排名</th><th>位置压力排名</th>
       <th>信号时涨幅</th><th>验证状态</th><th>最终收益</th>
       <th>最大浮盈</th><th>最大浮亏</th>
@@ -192,6 +192,7 @@
       const outcome = item.evaluation || {};
       return `<tr><td>${esc(selection.signal_time)}</td>
         <td>${esc(selection.code)}</td><td>${esc(selection.name)}</td>
+        <td class="neutral">${selection.strength === 'strong' ? '强多' : '弱多'}</td>
         <td>${num(selection.score, 3)}</td>
         <td>${pct(selection.volatility_5_rank, 0)}</td>
         <td>${pct(selection.volatility_20_rank, 0)}</td>
@@ -201,7 +202,7 @@
         <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
-    }).join('') : emptyRow(12, day ? '当日没有股票通过高质量启动规则' : '该日期没有交易日样本')}</tbody>`;
+    }).join('') : emptyRow(13, day ? '当日没有股票通过高质量启动规则' : '该日期没有交易日样本')}</tbody>`;
   }
 
   function renderCandidates() {
@@ -210,8 +211,14 @@
     const accounts = DATA.candidate_account_comparison || {};
     const baseline = accounts.baseline_early_raw || {};
     const candidate = accounts.high_quality_candidates || {};
+    const strongCandidate = accounts.high_quality_strong_only || {};
+    const allStrengthCandidate =
+      accounts.high_quality_strong_plus_weak || candidate;
+    const weakContribution = accounts.weak_long_contribution || {};
     const delta = accounts.delta || {};
     const formal = accounts.formal_all_signal_reference || {};
+    const formalWeakDelta =
+      DATA.weak_signal_comparison?.delta?.annual_return;
     const days = candidateDays();
     const input = $('#candidate-date');
     if (days.length) {
@@ -237,6 +244,22 @@
       `${pct(formal.annual_return)} · 不同口径`;
     $('#candidate-formal-reference').className =
       tone(formal.annual_return);
+    $('#candidate-strong-return').textContent =
+      pct(strongCandidate.annual_return, 4);
+    $('#candidate-strong-return').className =
+      tone(strongCandidate.annual_return);
+    $('#candidate-all-strength-return').textContent =
+      pct(allStrengthCandidate.annual_return, 4);
+    $('#candidate-all-strength-return').className =
+      tone(allStrengthCandidate.annual_return);
+    $('#candidate-weak-delta').textContent =
+      pct(weakContribution.annual_return, 4);
+    $('#candidate-weak-delta').className =
+      tone(weakContribution.annual_return);
+    $('#candidate-formal-weak-delta').textContent =
+      pct(formalWeakDelta);
+    $('#candidate-formal-weak-delta').className =
+      tone(formalWeakDelta);
     renderCandidateDate(days.at(-1)?.date || '');
   }
 
@@ -442,9 +465,11 @@
       ['实时成交', contracts.live_entry],
       ['真实交易控制', contracts.live_controls_trading ? '已启用' : '未启用，只读模拟'],
       ['每日待定票', DATA.daily_candidates?.contract?.selection],
+      ['待定票强弱分类', DATA.daily_candidates?.contract?.signal_strength],
       ['待定票未来收益参与', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
       ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
       ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
+      ['弱空退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
       ['历史收益契约', DATA.history?.return_contract],
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
