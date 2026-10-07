@@ -139,6 +139,104 @@
     }).join('')}</tbody>`;
   }
 
+  function candidateDays() {
+    return DATA.daily_candidates?.days || [];
+  }
+
+  function candidateOutcome(item, field) {
+    const value = item.evaluation?.[field];
+    return value === null || value === undefined ? '—' : pct(value);
+  }
+
+  function renderCandidateDate(value) {
+    const days = candidateDays();
+    const index = days.findIndex(day => day.date === value);
+    const day = index >= 0 ? days[index] : null;
+    const input = $('#candidate-date');
+    input.value = value || '';
+    $('#candidate-prev').disabled = index <= 0;
+    $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
+    $('#candidate-date-status').textContent = day
+      ? `${day.date} · 交易日样本`
+      : value ? `${value} · 无交易日样本` : '暂无样本';
+
+    const evaluation = day?.evaluation || {};
+    $('#candidate-kpis').innerHTML = [
+      kpi('当日待定票', `${num(day?.candidate_count || 0)} 只`,
+        '不强制占满名额'),
+      kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
+        '信号时间不晚于 10:00'),
+      kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
+        '同一5分钟横向比较'),
+      kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
+        `未成交 ${num(evaluation.unfilled_count || 0)} · 截尾 ${num(evaluation.censored_count || 0)}`),
+      kpi('最终收益≥10%', `${num(evaluation.return_winner_count || 0)} 只`,
+        '仅作事后验证'),
+      kpi('最大浮盈≥20%', `${num(evaluation.mfe_winner_count || 0)} 只`,
+        '仅作事后验证'),
+    ].join('');
+
+    const rows = day?.candidates || [];
+    const statusLabel = {
+      complete: '验证完成',
+      unfilled: '下一周期未成交',
+      censored: '后续样本不足',
+    };
+    $('#candidate-table').innerHTML = `<thead><tr>
+      <th>信号</th><th>代码</th><th>名称</th><th>画像分</th>
+      <th>5日波动排名</th><th>20日波动排名</th><th>位置压力排名</th>
+      <th>信号时涨幅</th><th>验证状态</th><th>最终收益</th>
+      <th>最大浮盈</th><th>最大浮亏</th>
+    </tr></thead><tbody>${rows.length ? rows.map(item => {
+      const selection = item.selection;
+      const outcome = item.evaluation || {};
+      return `<tr><td>${esc(selection.signal_time)}</td>
+        <td>${esc(selection.code)}</td><td>${esc(selection.name)}</td>
+        <td>${num(selection.score, 3)}</td>
+        <td>${pct(selection.volatility_5_rank, 0)}</td>
+        <td>${pct(selection.volatility_20_rank, 0)}</td>
+        <td>${pct(selection.location_pressure_rank, 0)}</td>
+        <td class="${tone(selection.intraday_return)}">${pct(selection.intraday_return)}</td>
+        <td>${esc(statusLabel[outcome.status] || outcome.status)}</td>
+        <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
+        <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
+        <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
+    }).join('') : emptyRow(12, day ? '当日没有股票通过高质量启动规则' : '该日期没有交易日样本')}</tbody>`;
+  }
+
+  function renderCandidates() {
+    const payload = DATA.daily_candidates || {};
+    const summary = payload.summary || {};
+    const days = candidateDays();
+    const input = $('#candidate-date');
+    if (days.length) {
+      input.min = days[0].date;
+      input.max = days[days.length - 1].date;
+    }
+    $('#candidate-hash').textContent = payload.selection_sha256
+      ? `选择哈希 ${payload.selection_sha256.slice(0, 16)}`
+      : '选择哈希 —';
+    $('#candidate-total-days').textContent =
+      `${num(summary.trading_days)} 日 · 空名单 ${num(summary.zero_candidate_days)} 日`;
+    $('#candidate-total-count').textContent =
+      `${num(summary.candidate_count)} 只`;
+    $('#candidate-mean-return').textContent = pct(summary.mean_return);
+    $('#candidate-mean-return').className = tone(summary.mean_return);
+    $('#candidate-mean-mfe').textContent =
+      pct(summary.mean_max_floating_profit);
+    $('#candidate-mean-mfe').className =
+      tone(summary.mean_max_floating_profit);
+    renderCandidateDate(days.at(-1)?.date || '');
+  }
+
+  function moveCandidateDate(offset) {
+    const days = candidateDays();
+    const index = days.findIndex(
+      day => day.date === $('#candidate-date').value);
+    const target = days[index + offset];
+    if (target) renderCandidateDate(target.date);
+  }
+
   function filteredStocks() {
     const query = $('#stock-search').value.trim().toLowerCase();
     const filter = $('#stock-return-filter').value;
@@ -332,6 +430,8 @@
       ['推荐历史入场代理', contracts.recommended_history_entry],
       ['实时成交', contracts.live_entry],
       ['真实交易控制', contracts.live_controls_trading ? '已启用' : '未启用，只读模拟'],
+      ['每日待定票', DATA.daily_candidates?.contract?.selection],
+      ['待定票未来收益参与', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
       ['历史收益契约', DATA.history?.return_contract],
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
@@ -346,6 +446,7 @@
       trend_live: '实时扫描', early_exit: '提前空点',
       winner_profile: '赢家画像', winner_onset: '首次多头',
       entry_price: '入场价格', winner_shadow: '即时影子',
+      daily_candidates: '每日待定票',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
       `<tr><td>${esc(labels[key] || key)}</td><td class="${value.available ? 'neutral' : 'down'}">${value.available ? '可用' : '缺失'}</td>
@@ -369,6 +470,12 @@
       }));
     $('#stock-prev').addEventListener('click', () => { stockPage -= 1; renderStocks(); });
     $('#stock-next').addEventListener('click', () => { stockPage += 1; renderStocks(); });
+    $('#candidate-date').addEventListener(
+      'change', event => renderCandidateDate(event.target.value));
+    $('#candidate-prev').addEventListener(
+      'click', () => moveCandidateDate(-1));
+    $('#candidate-next').addEventListener(
+      'click', () => moveCandidateDate(1));
     $('#stock-dialog-close').addEventListener('click', () => $('#stock-dialog').close());
     $('#refresh').addEventListener('click', () => location.reload());
     window.addEventListener('resize', () => charts.forEach(instance => instance.resize()));
@@ -385,6 +492,7 @@
       }
       renderHeader();
       renderOverview();
+      renderCandidates();
       renderStocks();
       renderPaper();
       renderResearch();

@@ -28,6 +28,7 @@
 
   <nav class="view-tabs" aria-label="多空指标数据视图">
     <button class="active" data-view="overview" type="button">总览</button>
+    <button data-view="candidates" type="button">每日待定票</button>
     <button data-view="stocks" type="button">个股回测</button>
     <button data-view="paper" type="button">实盘模拟</button>
     <button data-view="research" type="button">信号研究</button>
@@ -56,6 +57,38 @@
           <div><h2>月份明细</h2><p>收益、信号、交易和月末持仓</p></div>
         </div>
         <div class="table-wrap"><table id="monthly-table"></table></div>
+      </section>
+    </section>
+
+    <section id="view-candidates" class="view">
+      <div class="toolbar candidate-toolbar">
+        <button id="candidate-prev" type="button" title="上一交易日" aria-label="上一交易日">←</button>
+        <label>交易日期<input id="candidate-date" type="date"></label>
+        <button id="candidate-next" type="button" title="下一交易日" aria-label="下一交易日">→</button>
+        <span id="candidate-date-status" class="toolbar-count">--</span>
+      </div>
+      <div id="candidate-kpis" class="kpi-grid"></div>
+      <section class="status-band candidate-summary">
+        <div><span>历史交易日</span><strong id="candidate-total-days">--</strong></div>
+        <div><span>历史待定票</span><strong id="candidate-total-count">--</strong></div>
+        <div><span>平均最终收益</span><strong id="candidate-mean-return">--</strong></div>
+        <div><span>平均最大浮盈</span><strong id="candidate-mean-mfe">--</strong></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>高质量启动待定票</h2>
+            <p>首次多头不晚于 10:00；同批 5日波动率、20日波动率和价格位置压力均在前20%</p>
+          </div>
+          <span id="candidate-hash" class="hash-label">--</span>
+        </div>
+        <div class="table-wrap candidate-table-wrap">
+          <table id="candidate-table"></table>
+        </div>
+      </section>
+      <section class="panel warning-panel">
+        <h2>验证边界</h2>
+        <p>待定名单只由信号当时数据生成；最终收益和最大浮盈仅用于事后检验，不参与候选筛选，也不控制真实交易。</p>
       </section>
     </section>
 

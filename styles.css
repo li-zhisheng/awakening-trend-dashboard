@@ -99,6 +99,14 @@ input,select{
 }
 #stock-search{width:230px}
 .toolbar-count{margin-left:auto;color:var(--muted);padding:9px 0}
+.candidate-toolbar{align-items:center}
+.candidate-toolbar label{display:flex;align-items:center;gap:10px}
+.candidate-toolbar button{width:40px;height:40px;padding:0;font-size:20px}
+.hash-label{
+  color:var(--muted);font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+  overflow-wrap:anywhere;text-align:right;
+}
+.candidate-table-wrap{max-height:680px}
 .stock-table-wrap{max-height:660px}
 .stock-link{border:0;background:none;padding:0;color:#76ced2;text-decoration:underline;text-underline-offset:3px}
 .pagination{display:flex;align-items:center;justify-content:center;gap:14px;padding-top:14px}
@@ -152,8 +160,12 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   .definition-grid{grid-template-columns:1fr}
   .toolbar{align-items:stretch}
   .toolbar label{width:100%}
+  .candidate-toolbar label{width:auto;flex:1}
+  .candidate-toolbar label input{min-width:0;width:100%}
   #stock-search{width:100%}
   .toolbar-count{margin-left:0}
+  .candidate-toolbar .toolbar-count{width:100%}
+  .hash-label{text-align:left}
   .status-band{grid-template-columns:1fr}
   .status-band div{border-right:0;border-bottom:1px solid var(--line)}
   .status-band div:last-child{border-bottom:0}
