@@ -778,6 +778,8 @@
     const commonRules = commonality.rules?.all || {};
     const currentRule = commonRules.current_high_quality || {};
     const capitalUnion = commonRules.current_or_capital_confirmed || {};
+    const announcements = research.winner_announcements || {};
+    const announcementStable = announcements.status === 'stable_increment';
     const validation = DATA.paper_validation || {};
     $('#research-kpis').innerHTML = [
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
@@ -787,6 +789,9 @@
       kpi('全量收益赢家', num(commonality.sample?.return_winners), `${num(commonality.sample?.events)} 条可成交样本`),
       kpi('板块补充召回', pct(capitalUnion.return_winner_recall), `原规则 ${pct(currentRule.return_winner_recall)}`),
       kpi('下一开盘代理收益', pct(entry.next_bar_open_price?.mean_daily_return), '全样本每日 Top5'),
+      kpi('官方公告增量', announcementStable ? '稳定' : '不稳定',
+        `${num(announcements.sample?.events_with_30d_announcement)} 条候选有近30日公告`,
+        announcementStable ? 'up' : 'down'),
       kpi('分钟会计验收', validation.status === 'passed' ? '通过' : '待验收', `${num(validation.snapshots)} 个快照`),
     ].join('');
 
@@ -857,6 +862,21 @@
     $('#commonality-table').innerHTML = `<thead><tr><th>样本</th><th>原召回</th><th>资金补充召回</th>
       <th>补回赢家</th><th>原精度</th><th>补充后精度</th><th>板块内领涨 AUC</th>
       <th>净流入代理 AUC</th><th>Top5 技术/板块</th></tr></thead><tbody>${commonRows}</tbody>`;
+    const announcementSplits = ['validation', 'heldout', 'final_short_holdout'];
+    const announcementRows = announcementSplits.map(key => {
+      const delta = announcements.increment?.[key] || {};
+      const rule = announcements.announcement_rules?.[key]?.announcement_count_30d || {};
+      return `<tr><td>${esc(commonLabels[key] || key)}</td>
+        <td class="${tone(delta.average_precision)}">${pct(delta.average_precision)}</td>
+        <td class="${tone(delta.roc_auc)}">${num(delta.roc_auc, 4)}</td>
+        <td class="${tone(delta.precision_at_5pct)}">${pct(delta.precision_at_5pct)}</td>
+        <td>${num(rule.samples)}</td><td>${pct(rule.precision)}</td><td>${pct(rule.recall)}</td></tr>`;
+    }).join('');
+    $('#announcement-status').textContent = announcementStable ? '稳定增量' : '研究未通过';
+    $('#announcement-status').className = `status ${announcementStable ? 'ok' : 'bad'}`;
+    $('#announcement-table').innerHTML = `<thead><tr><th>样本</th><th>AP 增量</th><th>AUC 增量</th>
+      <th>Top 5% 命中增量</th><th>近30日公告候选</th><th>公告规则命中</th>
+      <th>公告规则召回</th></tr></thead><tbody>${announcementRows}</tbody>`;
     $('#validation-detail').innerHTML = [
       ['状态', validation.status === 'passed' ? '通过' : '待验收'],
       ['数据源', validation.source],
@@ -896,6 +916,7 @@
       paper_health: '模拟心跳', paper_validation: '分钟验收',
       trend_live: '实时扫描', early_exit: '提前空点',
       winner_profile: '赢家画像', winner_commonality: '大涨股共性',
+      winner_announcements: '官方公告增量',
       winner_onset: '首次多头',
       entry_price: '入场价格', winner_shadow: '即时影子',
       daily_candidates: '每日待定票',

@@ -79,6 +79,12 @@ main{max-width:1440px;margin:auto;padding:22px 24px 48px}
 }
 .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .panel-head p{color:var(--muted);font-size:12px;margin-top:3px}
+.status{
+  min-width:88px;padding:5px 9px;border:1px solid var(--line);
+  border-radius:4px;text-align:center;font-size:12px;white-space:nowrap;
+}
+.status.ok{color:var(--red);border-color:#6e3434;background:#26191b}
+.status.bad{color:var(--green);border-color:#285d49;background:#14251f}
 .chart{height:320px;min-height:240px}
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:4px}
 table{width:100%;border-collapse:collapse;min-width:720px}
