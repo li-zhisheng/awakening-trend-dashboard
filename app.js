@@ -3,11 +3,11 @@
 
   let DATA = null;
   let PAPER = null;
-  let STOCKS = null;
   let stockMarketState = null;
   let stockPage = 1;
   const pageSize = 80;
   const charts = new Map();
+  const stockDetailCache = new Map();
   const stockDailyCache = new Map();
   const stockMinuteCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
@@ -323,11 +323,17 @@
     });
   }
 
-  async function loadStocks() {
-    if (!STOCKS) {
-      STOCKS = await loadFirst(dataPaths('api/stocks', 'stocks.json'));
+  async function loadStockDetail(code) {
+    if (!stockDetailCache.has(code)) {
+      const value = await loadFirst([
+        `details/${code.slice(0, 2)}/${code}.json`,
+      ]);
+      if (value.code !== code) {
+        throw new Error('个股账户明细不完整');
+      }
+      stockDetailCache.set(code, value);
     }
-    return STOCKS;
+    return stockDetailCache.get(code);
   }
 
   async function loadStockDaily(code) {
@@ -363,6 +369,19 @@
       stockMinuteCache.set(code, value);
     }
     return stockMinuteCache.get(code);
+  }
+
+  function renderStockAccountDetail(row) {
+    const months = row.monthly || [];
+    $('#stock-monthly').innerHTML = `<thead><tr><th>月份</th><th>月收益</th><th>累计收益</th><th>已实现</th><th>交易</th><th>月末</th></tr></thead>
+      <tbody>${months.length ? months.map(item => `<tr><td>${esc(item.month)}</td>
+      <td class="${tone(item.return)}">${pct(item.return)}</td><td class="${tone(item.cumulative_return)}">${pct(item.cumulative_return)}</td>
+      <td>${pct(item.realized_return)}</td><td>${num(item.realized_trades)}</td><td>${item.holding_end ? '持仓' : '现金'}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
+    const executions = row.executions || [];
+    $('#stock-executions').innerHTML = `<thead><tr><th>日期</th><th>时间</th><th>方向</th><th>价格</th><th>来源</th></tr></thead>
+      <tbody>${executions.length ? executions.slice().reverse().map(item => `<tr>
+      <td>${esc(item[0])}</td><td>${esc(item[1])}</td><td class="${item[2] > 0 ? 'up' : 'down'}">${item[2] > 0 ? '多头买入' : '空头卖出'}</td>
+      <td>${num(item[3], 4)}</td><td>${esc(item[4])}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
   }
 
   function stockDailyMarks(daily) {
@@ -659,7 +678,39 @@
       `${date} 前复权5分钟 · 昨收 ${num(previousClose, 3)} · ${labels.join(' · ')}`;
   }
 
-  function setStockMarketView(view) {
+  async function ensureStockMinutes(state) {
+    if (state.minute) return true;
+    if (!state.minutePromise) {
+      state.minutePromise = loadStockMinutes(state.code);
+    }
+    try {
+      const minute = await state.minutePromise;
+      if (stockMarketState !== state) return false;
+      state.minute = minute;
+      state.minuteByDate = new Map(
+        minute.days.map(day => [day[0], day]));
+      const dates = [...state.minuteByDate.keys()].sort();
+      state.date = dates.at(-1) || '';
+      $('#stock-minute-date').innerHTML = dates.map(day =>
+        `<option value="${esc(day)}">${esc(day)}</option>`).join('');
+      $('#stock-minute-date').value = state.date;
+      if (!dates.length) {
+        $('#stock-market-status').textContent =
+          '该股票没有可用的历史信号日分时';
+      }
+      return Boolean(dates.length);
+    } catch (_error) {
+      if (stockMarketState === state) {
+        $('#stock-market-status').textContent =
+          '该股票没有可用的历史信号日分时';
+      }
+      return false;
+    } finally {
+      state.minutePromise = null;
+    }
+  }
+
+  async function setStockMarketView(view) {
     const state = stockMarketState;
     if (!state || !['daily', 'minute'].includes(view)) return;
     state.view = view;
@@ -670,68 +721,66 @@
       button.setAttribute('aria-selected', String(active));
     }
     $('#stock-minute-date-wrap').hidden = view !== 'minute';
-    requestAnimationFrame(() => {
-      if (view === 'daily') renderStockDaily();
-      else renderStockMinute();
-      charts.get('stock-detail-chart')?.resize();
-    });
+    if (view === 'daily') {
+      renderStockDaily();
+    } else {
+      if (!state.minute) {
+        $('#stock-market-status').textContent =
+          '正在读取信号日分时';
+      }
+      if (!(state.minute || await ensureStockMinutes(state))) return;
+      if (stockMarketState !== state || state.view !== 'minute') return;
+      renderStockMinute();
+    }
+    charts.get('stock-detail-chart')?.resize();
+    requestAnimationFrame(() =>
+      charts.get('stock-detail-chart')?.resize());
   }
 
   async function openStock(code) {
-    const payload = await loadStocks();
-    const row = (payload.stocks || []).find(item => item.code === code);
+    const row = (DATA.stock_summary || []).find(
+      item => item.code === code);
     if (!row) return;
     $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
     $('#stock-dialog-meta').textContent =
       `年度收益 ${pct(row.annual_return)} · 闭环 ${num(row.closed_trades)} 笔 · 胜率 ${pct(row.win_rate)}`;
-    const months = row.monthly || [];
-    $('#stock-monthly').innerHTML = `<thead><tr><th>月份</th><th>月收益</th><th>累计收益</th><th>已实现</th><th>交易</th><th>月末</th></tr></thead>
-      <tbody>${months.map(item => `<tr><td>${esc(item.month)}</td>
-      <td class="${tone(item.return)}">${pct(item.return)}</td><td class="${tone(item.cumulative_return)}">${pct(item.cumulative_return)}</td>
-      <td>${pct(item.realized_return)}</td><td>${num(item.realized_trades)}</td><td>${item.holding_end ? '持仓' : '现金'}</td></tr>`).join('')}</tbody>`;
-    const executions = row.executions || [];
-    $('#stock-executions').innerHTML = `<thead><tr><th>日期</th><th>时间</th><th>方向</th><th>价格</th><th>来源</th></tr></thead>
-      <tbody>${executions.length ? executions.slice().reverse().map(item => `<tr>
-      <td>${esc(item[0])}</td><td>${esc(item[1])}</td><td class="${item[2] > 0 ? 'up' : 'down'}">${item[2] > 0 ? '多头买入' : '空头卖出'}</td>
-      <td>${num(item[3], 4)}</td><td>${esc(item[4])}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
+    $('#stock-monthly').innerHTML =
+      `<tbody>${emptyRow(6, '正在读取账户明细')}</tbody>`;
+    $('#stock-executions').innerHTML =
+      `<tbody>${emptyRow(5, '正在读取成交明细')}</tbody>`;
     stockMarketState = {
       code, name: row.name, daily: null, minute: null,
-      minuteByDate: new Map(), view: 'daily', date: '',
+      minutePromise: null, minuteByDate: new Map(),
+      view: 'daily', date: '',
     };
-    $('#stock-market-status').textContent = '正在读取日K和信号日分时';
+    $('#stock-market-status').textContent = '正在读取日K';
     $('#stock-minute-date').innerHTML = '';
     $('#stock-minute-date-wrap').hidden = true;
-    $('#stock-minute-tab').disabled = true;
+    $('#stock-minute-tab').disabled = false;
     $('#stock-dialog').showModal();
     charts.get('stock-detail-chart')?.clear();
     const state = stockMarketState;
-    const [dailyResult, minuteResult] = await Promise.allSettled([
-      loadStockDaily(code),
-      loadStockMinutes(code),
-    ]);
-    if (stockMarketState !== state) return;
-    if (dailyResult.status === 'fulfilled') {
-      state.daily = dailyResult.value;
-    }
-    if (minuteResult.status === 'fulfilled') {
-      state.minute = minuteResult.value;
-      state.minuteByDate = new Map(
-        state.minute.days.map(day => [day[0], day]));
-      const dates = [...state.minuteByDate.keys()].sort();
-      state.date = dates.at(-1) || '';
-      $('#stock-minute-date').innerHTML = dates.map(date =>
-        `<option value="${esc(date)}">${esc(date)}</option>`).join('');
-      $('#stock-minute-date').value = state.date;
-      $('#stock-minute-tab').disabled = !dates.length;
-    } else {
-      $('#stock-minute-tab').disabled = true;
-    }
-    if (!state.daily) {
+    loadStockDetail(code).then(detail => {
+      if (stockMarketState === state) {
+        renderStockAccountDetail(detail);
+      }
+    }).catch(() => {
+      if (stockMarketState === state) {
+        $('#stock-monthly').innerHTML =
+          `<tbody>${emptyRow(6, '账户明细暂不可用')}</tbody>`;
+        $('#stock-executions').innerHTML =
+          `<tbody>${emptyRow(5, '成交明细暂不可用')}</tbody>`;
+      }
+    });
+    try {
+      state.daily = await loadStockDaily(code);
+    } catch (_error) {
+      if (stockMarketState !== state) return;
       $('#stock-market-status').textContent =
-        '日K数据不可用；该股票暂时无法绘图';
+        '日K数据不可用；可尝试查看信号日分时';
       return;
     }
-    setStockMarketView('daily');
+    if (stockMarketState === state) setStockMarketView('daily');
   }
 
   function renderPaper() {
