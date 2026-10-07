@@ -774,12 +774,18 @@
     const staged = onset.results?.heldout?.staged_3_1_1?.onset_winner_profile_v1 || {};
     const compare = onset.results?.heldout?.staged_3_1_1?.v2_probability || {};
     const entry = research.entry_price?.results?.all_periods || {};
+    const commonality = research.winner_commonality || {};
+    const commonRules = commonality.rules?.all || {};
+    const currentRule = commonRules.current_high_quality || {};
+    const capitalUnion = commonRules.current_or_capital_confirmed || {};
     const validation = DATA.paper_validation || {};
     $('#research-kpis').innerHTML = [
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
       kpi('提前空点胜率', pct(early.early_trade_win_rate), `原空点 ${pct(early.base_trade_win_rate)}`),
       kpi('赢家画像大涨股', num(staged.return_winner_count), `V2 ${num(compare.return_winner_count)}`),
       kpi('最大浮盈赢家', num(staged.mfe_winner_count), `V2 ${num(compare.mfe_winner_count)}`),
+      kpi('全量收益赢家', num(commonality.sample?.return_winners), `${num(commonality.sample?.events)} 条可成交样本`),
+      kpi('板块补充召回', pct(capitalUnion.return_winner_recall), `原规则 ${pct(currentRule.return_winner_recall)}`),
       kpi('下一开盘代理收益', pct(entry.next_bar_open_price?.mean_daily_return), '全样本每日 Top5'),
       kpi('分钟会计验收', validation.status === 'passed' ? '通过' : '待验收', `${num(validation.snapshots)} 个快照`),
     ].join('');
@@ -826,6 +832,31 @@
     $('#winner-table').innerHTML = `<thead><tr><th>样本</th><th>画像收益赢家</th><th>V2收益赢家</th>
       <th>画像浮盈赢家</th><th>V2浮盈赢家</th><th>填单率</th><th>平均收益</th></tr></thead>
       <tbody>${winnerRows || emptyRow(7)}</tbody>`;
+    const commonSplits = ['all', 'train', 'validation', 'heldout', 'final_short_holdout'];
+    const commonLabels = {
+      all: '全样本', train: '1-4月', validation: '5-6月',
+      heldout: '7-8月', final_short_holdout: '9月',
+    };
+    const commonRows = commonSplits.map(key => {
+      const rules = commonality.rules?.[key] || {};
+      const current = rules.current_high_quality || {};
+      const union = rules.current_or_capital_confirmed || {};
+      const leader = commonality.factor_audit?.industry_leader_rank?.splits?.[key];
+      const flow = commonality.factor_audit?.industry_net_inflow_proxy_cny?.splits?.[key];
+      const ranking = commonality.ranking?.[key] || {};
+      const technicalTop5 = ranking.onset_winner_profile_v1?.return_winner_count;
+      const industryTop5 = ranking.winner_industry_20?.return_winner_count;
+      return `<tr><td>${esc(commonLabels[key] || key)}</td>
+        <td>${pct(current.return_winner_recall)}</td><td>${pct(union.return_winner_recall)}</td>
+        <td>${num(union.incremental_return_winners_vs_current)}</td>
+        <td>${pct(current.return_winner_precision)}</td><td>${pct(union.return_winner_precision)}</td>
+        <td>${leader ? num(leader.return_winner_auc, 3) : '—'}</td>
+        <td>${flow ? num(flow.return_winner_auc, 3) : '—'}</td>
+        <td>${technicalTop5 == null ? '—' : `${num(technicalTop5)} / ${num(industryTop5)}`}</td></tr>`;
+    }).join('');
+    $('#commonality-table').innerHTML = `<thead><tr><th>样本</th><th>原召回</th><th>资金补充召回</th>
+      <th>补回赢家</th><th>原精度</th><th>补充后精度</th><th>板块内领涨 AUC</th>
+      <th>净流入代理 AUC</th><th>Top5 技术/板块</th></tr></thead><tbody>${commonRows}</tbody>`;
     $('#validation-detail').innerHTML = [
       ['状态', validation.status === 'passed' ? '通过' : '待验收'],
       ['数据源', validation.source],
@@ -864,7 +895,8 @@
       triggers: '分钟触发', paper: '模拟账本',
       paper_health: '模拟心跳', paper_validation: '分钟验收',
       trend_live: '实时扫描', early_exit: '提前空点',
-      winner_profile: '赢家画像', winner_onset: '首次多头',
+      winner_profile: '赢家画像', winner_commonality: '大涨股共性',
+      winner_onset: '首次多头',
       entry_price: '入场价格', winner_shadow: '即时影子',
       daily_candidates: '每日待定票',
       candidate_accounts: '候选账户对照',
