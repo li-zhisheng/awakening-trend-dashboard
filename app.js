@@ -207,6 +207,11 @@
   function renderCandidates() {
     const payload = DATA.daily_candidates || {};
     const summary = payload.summary || {};
+    const accounts = DATA.candidate_account_comparison || {};
+    const baseline = accounts.baseline_early_raw || {};
+    const candidate = accounts.high_quality_candidates || {};
+    const delta = accounts.delta || {};
+    const formal = accounts.formal_all_signal_reference || {};
     const days = candidateDays();
     const input = $('#candidate-date');
     if (days.length) {
@@ -214,18 +219,24 @@
       input.max = days[days.length - 1].date;
     }
     $('#candidate-hash').textContent = payload.selection_sha256
-      ? `选择哈希 ${payload.selection_sha256.slice(0, 16)}`
+      ? `${num(summary.trading_days)} 日 · ${num(summary.candidate_count)} 只 · 选择哈希 ${payload.selection_sha256.slice(0, 16)}`
       : '选择哈希 —';
-    $('#candidate-total-days').textContent =
-      `${num(summary.trading_days)} 日 · 空名单 ${num(summary.zero_candidate_days)} 日`;
-    $('#candidate-total-count').textContent =
-      `${num(summary.candidate_count)} 只`;
-    $('#candidate-mean-return').textContent = pct(summary.mean_return);
-    $('#candidate-mean-return').className = tone(summary.mean_return);
-    $('#candidate-mean-mfe').textContent =
-      pct(summary.mean_max_floating_profit);
-    $('#candidate-mean-mfe').className =
-      tone(summary.mean_max_floating_profit);
+    $('#candidate-account-baseline').textContent =
+      pct(baseline.annual_return);
+    $('#candidate-account-baseline').className =
+      tone(baseline.annual_return);
+    $('#candidate-account-return').textContent =
+      pct(candidate.annual_return);
+    $('#candidate-account-return').className =
+      tone(candidate.annual_return);
+    $('#candidate-account-delta').textContent =
+      pct(delta.annual_return);
+    $('#candidate-account-delta').className =
+      tone(delta.annual_return);
+    $('#candidate-formal-reference').textContent =
+      `${pct(formal.annual_return)} · 不同口径`;
+    $('#candidate-formal-reference').className =
+      tone(formal.annual_return);
     renderCandidateDate(days.at(-1)?.date || '');
   }
 
@@ -432,6 +443,8 @@
       ['真实交易控制', contracts.live_controls_trading ? '已启用' : '未启用，只读模拟'],
       ['每日待定票', DATA.daily_candidates?.contract?.selection],
       ['待定票未来收益参与', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
+      ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
+      ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
       ['历史收益契约', DATA.history?.return_contract],
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
@@ -447,6 +460,7 @@
       winner_profile: '赢家画像', winner_onset: '首次多头',
       entry_price: '入场价格', winner_shadow: '即时影子',
       daily_candidates: '每日待定票',
+      candidate_accounts: '候选账户对照',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
       `<tr><td>${esc(labels[key] || key)}</td><td class="${value.available ? 'neutral' : 'down'}">${value.available ? '可用' : '缺失'}</td>
