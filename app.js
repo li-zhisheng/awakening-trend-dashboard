@@ -11,6 +11,24 @@
   const stockDailyCache = new Map();
   const stockMinuteCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
+  const signalColors = {
+    strongLong: '#b71c1c',
+    weakLong: '#f48fb1',
+    strongShort: '#0b5d3b',
+    weakShort: '#4fd1a1',
+  };
+  const minuteClocks = [
+    ...Array.from({ length: 24 }, (_, index) => {
+      const total = 9 * 60 + 35 + index * 5;
+      return `${String(Math.floor(total / 60)).padStart(2, '0')}${String(total % 60).padStart(2, '0')}`;
+    }),
+    ...Array.from({ length: 24 }, (_, index) => {
+      const total = 13 * 60 + index * 5;
+      return index === 23
+        ? '1500'
+        : `${String(Math.floor(total / 60)).padStart(2, '0')}${String(total % 60).padStart(2, '0')}`;
+    }),
+  ];
 
   const $ = (selector) => document.querySelector(selector);
   const dataPaths = (api, file) => staticHost ? [file] : [api, file];
@@ -29,6 +47,9 @@
     })}` : '—';
   const dt = (value) => value
     ? String(value).replace('T', ' ').replace(/\+08:00$/, '') : '—';
+  const clock = (value) => /^\d{4}$/.test(String(value || ''))
+    ? `${String(value).slice(0, 2)}:${String(value).slice(2)}`
+    : String(value || '—');
   const tone = (value) => Number(value) > 0
     ? 'up' : Number(value) < 0 ? 'down' : 'neutral';
   const emptyRow = (columns, text = '暂无数据') =>
@@ -360,13 +381,36 @@
         `minutes/${code.slice(0, 2)}/${code}.json`,
       ]);
       if (
-        value.schema !== 'awakening-trend-signal-minutes-v1'
+        value.schema !== 'awakening-trend-all-day-minutes-v2'
         || value.code !== code
         || !Array.isArray(value.days)
       ) {
         throw new Error('分时数据不完整');
       }
-      stockMinuteCache.set(code, value);
+      const days = value.days.map(day => {
+        const [date, previousClose, deltas, volumes, marks] = day;
+        if (
+          !Array.isArray(deltas)
+          || !Array.isArray(volumes)
+          || deltas.length !== minuteClocks.length
+          || volumes.length !== minuteClocks.length
+        ) {
+          throw new Error(`分时数据不完整: ${date}`);
+        }
+        let scaledPrice = 0;
+        const points = deltas.map((delta, index) => {
+          scaledPrice = index === 0
+            ? Number(delta)
+            : scaledPrice + Number(delta);
+          return [
+            minuteClocks[index],
+            scaledPrice / 10000,
+            Number(volumes[index]),
+          ];
+        });
+        return [date, previousClose, points, marks || []];
+      });
+      stockMinuteCache.set(code, { ...value, days });
     }
     return stockMinuteCache.get(code);
   }
@@ -380,8 +424,8 @@
     const executions = row.executions || [];
     $('#stock-executions').innerHTML = `<thead><tr><th>日期</th><th>时间</th><th>方向</th><th>价格</th><th>来源</th></tr></thead>
       <tbody>${executions.length ? executions.slice().reverse().map(item => `<tr>
-      <td>${esc(item[0])}</td><td>${esc(item[1])}</td><td class="${item[2] > 0 ? 'up' : 'down'}">${item[2] > 0 ? '多头买入' : '空头卖出'}</td>
-      <td>${num(item[3], 4)}</td><td>${esc(item[4])}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
+      <td>${esc(item[0])}</td><td>${esc(clock(item[1]))}</td><td class="${item[2] > 0 ? 'up' : 'down'}">${item[2] > 0 ? '多头买入' : '空头卖出'}</td>
+      <td>${num(item[3], 2)}</td><td>${esc(item[4])}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
   }
 
   function stockDailyMarks(daily) {
@@ -392,25 +436,29 @@
       const bar = daily.bars[index];
       if (!bar || ![1, -1].includes(direction)) return null;
       const long = direction === 1;
+      const strong = strength === 'strong';
+      const color = long
+        ? (strong ? signalColors.strongLong : signalColors.weakLong)
+        : (strong ? signalColors.strongShort : signalColors.weakShort);
       return {
-        name: strength === 'strong'
+        name: strong
           ? (long ? '强多' : '强空')
           : (long ? '弱多' : '弱空'),
         coord: [index, long ? Number(bar[3]) : Number(bar[2])],
         value: long ? '多' : '空',
-        symbol: strength === 'strong' ? 'circle' : 'emptyCircle',
-        symbolSize: strength === 'strong' ? 28 : 22,
+        symbol: 'circle',
+        symbolSize: strong ? 28 : 22,
         symbolOffset: [0, long ? '68%' : '-68%'],
         itemStyle: {
-          color: long ? '#ef6666' : '#3fc28b',
+          color,
           borderColor: '#101619',
-          borderWidth: strength === 'strong' ? 2 : 1,
-          opacity: strength === 'strong' ? 1 : 0.78,
+          borderWidth: strong ? 2 : 1,
+          opacity: strong ? 1 : .9,
         },
         label: {
           show: true,
-          color: '#ffffff',
-          fontSize: strength === 'strong' ? 11 : 9,
+          color: strong ? '#ffffff' : '#182126',
+          fontSize: strong ? 11 : 9,
           fontWeight: 700,
           formatter: long ? '多' : '空',
         },
@@ -522,7 +570,7 @@
     instance?.off('click');
     instance?.on('click', params => {
       const day = dates[params.dataIndex];
-      if (!day || !state.minuteByDate.has(day)) return;
+      if (!day) return;
       state.date = day;
       $('#stock-minute-date').value = day;
       setStockMarketView('minute');
@@ -531,7 +579,7 @@
       mark.name.startsWith('强')).length;
     const weak = marks.length - strong;
     $('#stock-market-status').textContent =
-      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 点击信号K线查看分时`;
+      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 点击任意K线查看当天分时`;
   }
 
   function renderStockMinute() {
@@ -539,7 +587,7 @@
     const day = state?.minuteByDate.get(state.date);
     if (!state || !day) {
       $('#stock-market-status').textContent =
-        '该股票没有可用的历史信号日分时';
+        '该交易日没有可用的历史分时';
       charts.get('stock-detail-chart')?.clear();
       return;
     }
@@ -553,37 +601,48 @@
       ...prices.map(price => Math.abs(price - previousClose)),
     ) * 1.12;
     const markPoints = marks.map(mark => {
-      const time = `${mark[0].slice(0, 2)}:${mark[0].slice(2)}`;
+      const time = clock(mark[0]);
       const index = times.indexOf(time);
       const long = Number(mark[1]) === 1;
       const weak = mark[2] === 'weak';
+      const price = Number(mark[4]);
+      const change = (price / previousClose - 1) * 100;
+      const color = long
+        ? (weak ? signalColors.weakLong : signalColors.strongLong)
+        : (weak ? signalColors.weakShort : signalColors.strongShort);
+      const action = weak
+        ? (long ? '弱买' : '弱卖')
+        : (long ? '买' : '卖');
+      const changeText =
+        `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
       return {
         name: weak
           ? (long ? '弱多买入' : '弱空卖出')
           : (long ? '多头买入' : '空头卖出'),
-        coord: [index, Number(mark[4])],
-        value: weak
-          ? (long ? '弱买' : '弱卖')
-          : (long ? '买' : '卖'),
-        symbol: weak ? 'circle' : 'pin',
-        symbolSize: weak ? 32 : 42,
-        symbolOffset: [0, long ? '-45%' : '45%'],
+        coord: [index, price],
+        value: `${action} ${changeText}`,
+        symbol: 'circle',
+        symbolSize: weak ? 12 : 16,
+        symbolOffset: [0, long ? '-55%' : '55%'],
         itemStyle: {
-          color: weak
-            ? '#101619'
-            : (long ? '#ef6666' : '#3fc28b'),
-          borderColor: long ? '#ef6666' : '#3fc28b',
-          borderWidth: 2,
+          color,
+          borderColor: '#101619',
+          borderWidth: weak ? 1 : 2,
         },
         label: {
           show: true,
-          color: weak
-            ? (long ? '#ef6666' : '#3fc28b')
-            : '#ffffff',
-          fontSize: weak ? 9 : 11, fontWeight: 700,
-          formatter: weak
-            ? (long ? '弱买' : '弱卖')
-            : (long ? '买' : '卖'),
+          position: long ? 'top' : 'bottom',
+          distance: weak ? 16 : 22,
+          color,
+          backgroundColor: 'rgba(13,17,20,.92)',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 3,
+          padding: [3, 5],
+          fontSize: weak ? 9 : 10,
+          lineHeight: 14,
+          fontWeight: 700,
+          formatter: `${action} ${changeText}\n${price.toFixed(2)}`,
         },
       };
     });
@@ -600,12 +659,12 @@
           const change = (
             Number(price.value) / previousClose - 1
           ) * 100;
-          return `${date} ${price.axisValue}<br>价格 ${num(price.value, 4)}`
+          return `${date} ${price.axisValue}<br>价格 ${num(price.value, 2)}`
             + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
         },
       },
       grid: [
-        { left: 58, right: 18, top: 34, height: '60%' },
+        { left: 58, right: 18, top: 62, height: '52%' },
         { left: 58, right: 18, top: '76%', height: '11%' },
       ],
       xAxis: [
@@ -643,6 +702,7 @@
           lineStyle: { width: 2, color: '#78a8e8' },
           itemStyle: { color: '#78a8e8' },
           areaStyle: { color: 'rgba(120,168,232,.08)' },
+          labelLayout: { moveOverlap: 'shiftY' },
           markPoint: { data: markPoints },
           markLine: {
             silent: true, symbol: 'none',
@@ -672,7 +732,7 @@
     const labels = marks.map(mark => {
       const direction = Number(mark[1]) === 1 ? '多买入' : '空卖出';
       const strength = mark[2] === 'strong' ? '强' : '弱';
-      return `${mark[0].slice(0, 2)}:${mark[0].slice(2)} ${strength}${direction}`;
+      return `${clock(mark[0])} ${strength}${direction}`;
     });
     $('#stock-market-status').textContent =
       `${date} 前复权5分钟 · 昨收 ${num(previousClose, 3)} · ${labels.join(' · ')}`;
@@ -690,19 +750,19 @@
       state.minuteByDate = new Map(
         minute.days.map(day => [day[0], day]));
       const dates = [...state.minuteByDate.keys()].sort();
-      state.date = dates.at(-1) || '';
+      state.date = state.date || dates.at(-1) || '';
       $('#stock-minute-date').innerHTML = dates.map(day =>
         `<option value="${esc(day)}">${esc(day)}</option>`).join('');
       $('#stock-minute-date').value = state.date;
       if (!dates.length) {
         $('#stock-market-status').textContent =
-          '该股票没有可用的历史信号日分时';
+          '该股票没有可用的历史分时';
       }
       return Boolean(dates.length);
     } catch (_error) {
       if (stockMarketState === state) {
         $('#stock-market-status').textContent =
-          '该股票没有可用的历史信号日分时';
+          '该股票没有可用的历史分时';
       }
       return false;
     } finally {
@@ -726,7 +786,7 @@
     } else {
       if (!state.minute) {
         $('#stock-market-status').textContent =
-          '正在读取信号日分时';
+          '正在读取历史分时';
       }
       if (!(state.minute || await ensureStockMinutes(state))) return;
       if (stockMarketState !== state || state.view !== 'minute') return;
@@ -777,7 +837,7 @@
     } catch (_error) {
       if (stockMarketState !== state) return;
       $('#stock-market-status').textContent =
-        '日K数据不可用；可尝试查看信号日分时';
+        '日K数据不可用；可尝试查看历史分时';
       return;
     }
     if (stockMarketState === state) setStockMarketView('daily');
@@ -955,7 +1015,7 @@
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
       ['触发价格口径', DATA.intraday_replay?.price_contract],
-      ['个股图表', `前复权日K + ${num(DATA.chart_assets?.signal_day_count)} 个强弱信号日5分钟分时`],
+      ['个股图表', `前复权日K + ${num(DATA.chart_assets?.minute_day_count)} 个交易日5分钟分时`],
     ];
     $('#contract-list').innerHTML = items.map(([label, value]) =>
       `<div class="definition"><span>${esc(label)}</span><strong>${esc(value || '—')}</strong></div>`).join('');
