@@ -688,7 +688,16 @@
           ...axisBase(), type: 'value',
           min: Math.max(0.01, previousClose - span),
           max: previousClose + span,
-          axisLabel: { formatter: value => Number(value).toFixed(2) },
+          axisLabel: {
+            formatter: value => {
+              const change = (
+                Number(value) / previousClose - 1
+              ) * 100;
+              const normalized = Math.abs(change) < .005
+                ? 0 : change;
+              return `${normalized > 0 ? '+' : ''}${normalized.toFixed(2)}%`;
+            },
+          },
         },
         {
           ...axisBase(), type: 'value', gridIndex: 1,
@@ -710,7 +719,7 @@
             label: {
               show: true, position: 'start',
               color: '#e5b94f',
-              formatter: Number(previousClose).toFixed(2),
+              formatter: '0.00%',
             },
             data: [{ yAxis: Number(previousClose) }],
           },
