@@ -7,8 +7,10 @@
   let stockPage = 1;
   const pageSize = 80;
   const charts = new Map();
+  const staticHost = location.hostname.endsWith('.github.io');
 
   const $ = (selector) => document.querySelector(selector);
+  const dataPaths = (api, file) => staticHost ? [file] : [api, file];
   const esc = (value) => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -182,7 +184,9 @@
   }
 
   async function loadStocks() {
-    if (!STOCKS) STOCKS = await loadFirst(['api/stocks', 'stocks.json']);
+    if (!STOCKS) {
+      STOCKS = await loadFirst(dataPaths('api/stocks', 'stocks.json'));
+    }
     return STOCKS;
   }
 
@@ -373,8 +377,8 @@
   async function boot() {
     try {
       [DATA, PAPER] = await Promise.all([
-        loadFirst(['api/data', 'data.json']),
-        loadFirst(['api/paper', 'paper.json']),
+        loadFirst(dataPaths('api/data', 'data.json')),
+        loadFirst(dataPaths('api/paper', 'paper.json')),
       ]);
       if (DATA.schema !== 'awakening-trend-dashboard-v1') {
         throw new Error('多空指标数据版本不兼容');
