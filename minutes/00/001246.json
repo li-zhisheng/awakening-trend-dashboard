@@ -1,1 +1,1 @@
-{"schema":"awakening-trend-all-day-minutes-v2","code":"001246","name":"N力勤资源","adjustment":"qfq","source":"BaoStock cached 5-minute OHLCV","price_encoding":"first_x1e4_then_delta","missing_days":[],"days":[]}
+{"schema":"awakening-trend-all-day-minutes-v4","code":"001246","name":"N力勤资源","adjustment":"qfq","source":"BaoStock cached 5-minute OHLCVA","price_encoding":"first_x1e4_then_delta","missing_days":[],"days":[]}

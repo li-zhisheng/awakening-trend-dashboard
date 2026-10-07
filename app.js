@@ -219,7 +219,7 @@
       censored: '后续样本不足',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号</th><th>代码</th><th>名称</th><th>强弱</th><th>画像分</th>
+      <th>信号</th><th>代码</th><th>名称</th><th>行业/板块</th><th>强弱</th><th>画像分</th>
       <th>5日波动排名</th><th>20日波动排名</th><th>位置压力排名</th>
       <th>信号时涨幅</th><th>验证状态</th><th>最终收益</th>
       <th>最大浮盈</th><th>最大浮亏</th>
@@ -229,6 +229,7 @@
       return `<tr><td>${esc(selection.signal_time)}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
+        <td>${esc(selection.industry || '—')}</td>
         <td class="neutral">${selection.strength === 'strong' ? '强多' : '弱多'}</td>
         <td>${num(selection.score, 3)}</td>
         <td>${pct(selection.volatility_5_rank, 0)}</td>
@@ -381,6 +382,43 @@
       ) {
         throw new Error('日K数据不完整');
       }
+      let live = null;
+      if (!staticHost) {
+        try {
+          live = await loadFirst([
+            `/api/live-stock?code=${encodeURIComponent(code)}`,
+          ]);
+        } catch (_error) {
+          live = null;
+        }
+      }
+      if (live?.days?.length) {
+        const bars = value.bars.slice();
+        const liveSignals = [];
+        for (const day of live.days) {
+          if (!day.points?.length) continue;
+          const prices = day.points.map(point => Number(point[1]));
+          const volume = day.points.reduce(
+            (total, point) => total + Number(point[2] || 0), 0);
+          const row = [
+            day.date, prices[0], Math.max(...prices),
+            Math.min(...prices), prices.at(-1), volume,
+          ];
+          const index = bars.findIndex(bar => bar[0] === day.date);
+          if (index >= 0) bars[index] = row;
+          else bars.push(row);
+          for (const mark of day.marks || []) {
+            liveSignals.push({
+              date: day.date, time: mark[0],
+              direction: Number(mark[1]), strength: mark[2],
+              probability: Number(mark[3]), price: Number(mark[4]),
+            });
+          }
+        }
+        bars.sort((left, right) => left[0].localeCompare(right[0]));
+        value.bars = bars;
+        value.liveSignals = liveSignals;
+      }
       stockDailyCache.set(code, value);
     }
     return stockDailyCache.get(code);
@@ -391,36 +429,84 @@
       const value = await loadFirst([
         `minutes/${code.slice(0, 2)}/${code}.json`,
       ]);
-      if (
-        value.schema !== 'awakening-trend-all-day-minutes-v2'
-        || value.code !== code
-        || !Array.isArray(value.days)
-      ) {
+      if (![
+        'awakening-trend-all-day-minutes-v2',
+        'awakening-trend-all-day-minutes-v3',
+        'awakening-trend-all-day-minutes-v4',
+      ].includes(value.schema) || value.code !== code
+        || !Array.isArray(value.days)) {
         throw new Error('分时数据不完整');
       }
       const days = value.days.map(day => {
-        const [date, previousClose, deltas, volumes, marks] = day;
+        const legacy = value.schema.endsWith('-v2');
+        const [date, previousClose] = day;
+        const clocks = minuteClocks;
+        const deltas = day[2];
+        const volumes = day[3];
+        const averageDeltas = legacy ? null : day[5];
+        const marks = day[4];
         if (
-          !Array.isArray(deltas)
+          !Array.isArray(clocks)
+          || !Array.isArray(deltas)
           || !Array.isArray(volumes)
-          || deltas.length !== minuteClocks.length
-          || volumes.length !== minuteClocks.length
+          || deltas.length !== clocks.length
+          || volumes.length !== clocks.length
+          || (
+            averageDeltas != null
+            && (
+              !Array.isArray(averageDeltas)
+              || averageDeltas.length !== clocks.length
+            )
+          )
         ) {
           throw new Error(`分时数据不完整: ${date}`);
         }
         let scaledPrice = 0;
+        let scaledAverage = 0;
         const points = deltas.map((delta, index) => {
           scaledPrice = index === 0
             ? Number(delta)
             : scaledPrice + Number(delta);
+          if (averageDeltas) {
+            scaledAverage = index === 0
+              ? Number(averageDeltas[index])
+              : scaledAverage + Number(averageDeltas[index]);
+          }
           return [
-            minuteClocks[index],
+            clocks[index],
             scaledPrice / 10000,
             Number(volumes[index]),
+            null,
+            averageDeltas ? scaledAverage / 10000 : null,
           ];
         });
-        return [date, previousClose, points, marks || []];
+        return [
+          date, previousClose, points, marks || [],
+          'BaoStock 历史5分钟价量数据',
+          legacy ? '5分钟' : '5分钟',
+        ];
       });
+      if (!staticHost) {
+        try {
+          const live = await loadFirst([
+            `/api/live-stock?code=${encodeURIComponent(code)}`,
+          ]);
+          for (const day of live.days || []) {
+            const normalized = [
+              day.date, Number(day.previous_close),
+              day.points || [], day.marks || [],
+              day.source || '腾讯/新浪批量实时快照',
+              day.frequency || '约1分钟真实快照',
+            ];
+            const index = days.findIndex(item => item[0] === day.date);
+            if (index >= 0) days[index] = normalized;
+            else days.push(normalized);
+          }
+          days.sort((left, right) => left[0].localeCompare(right[0]));
+        } catch (_error) {
+          // Historical data remains available when the live store is empty.
+        }
+      }
       stockMinuteCache.set(code, { ...value, days });
     }
     return stockMinuteCache.get(code);
@@ -476,10 +562,70 @@
         probability,
       };
     }).filter(Boolean);
-    return [
+    const result = [
       ...build(daily.signals, 'strong'),
       ...build(daily.filtered_signals, 'weak'),
     ];
+    const dates = daily.bars.map(row => row[0]);
+    for (const signal of daily.liveSignals || []) {
+      const index = dates.indexOf(signal.date);
+      if (index < 0) continue;
+      const bar = daily.bars[index];
+      const long = signal.direction === 1;
+      const strong = signal.strength === 'strong';
+      result.push({
+        name: long ? '盘中首多' : '盘中首空',
+        coord: [index, long ? Number(bar[3]) : Number(bar[2])],
+        value: long ? '首多' : '首空',
+        symbol: 'diamond',
+        symbolSize: 22,
+        itemStyle: {
+          color: long
+            ? (strong ? signalColors.strongLong : signalColors.weakLong)
+            : (strong ? signalColors.strongShort : signalColors.weakShort),
+          borderColor: '#101619', borderWidth: 2,
+        },
+        label: {
+          show: true, color: '#ffffff', fontSize: 9,
+          fontWeight: 700, formatter: long ? '首多' : '首空',
+        },
+      });
+    }
+    const existingLongDates = new Set(
+      result.filter(mark => mark.name.includes('多'))
+        .map(mark => dates[mark.coord[0]]));
+    for (const day of candidateDays()) {
+      for (const item of day.candidates || []) {
+        const selection = item.selection || {};
+        if (
+          selection.code !== stockMarketState?.code
+          || existingLongDates.has(day.date)
+        ) continue;
+        const index = dates.indexOf(day.date);
+        if (index < 0) continue;
+        const bar = daily.bars[index];
+        const strong = selection.strength === 'strong';
+        result.push({
+          name: '待定首次多头',
+          coord: [index, Number(bar[3])],
+          value: '待定多',
+          symbol: 'pin',
+          symbolSize: 28,
+          symbolOffset: [0, '60%'],
+          itemStyle: {
+            color: strong
+              ? signalColors.strongLong : signalColors.weakLong,
+            borderColor: '#101619', borderWidth: 1,
+          },
+          label: {
+            show: true, color: '#ffffff', fontSize: 9,
+            fontWeight: 700, formatter: '待定多',
+          },
+        });
+        existingLongDates.add(day.date);
+      }
+    }
+    return result;
   }
 
   function renderStockDaily() {
@@ -633,13 +779,49 @@
       charts.get('stock-detail-chart')?.clear();
       return;
     }
-    const [date, previousClose, points, marks] = day;
+    const [date, previousClose, points, rawMarks, source, frequency] = day;
     const times = points.map(point =>
       `${point[0].slice(0, 2)}:${point[0].slice(2)}`);
     const prices = points.map(point => Number(point[1]));
     const volumes = points.map(point => Number(point[2]));
-    const ma5 = movingAverage(prices, 5);
-    const ma10 = movingAverage(prices, 10);
+    const amounts = points.map(point =>
+      point[3] == null ? null : Number(point[3]));
+    let cumulativeVolume = 0;
+    let cumulativeAmount = 0;
+    const averagePrices = points.map((point, index) => {
+      if (point[4] != null && Number.isFinite(Number(point[4]))) {
+        return Number(point[4]);
+      }
+      if (amounts[index] == null) return null;
+      cumulativeVolume += Math.max(0, volumes[index]);
+      cumulativeAmount += Math.max(0, amounts[index]);
+      return cumulativeVolume > 0
+        ? cumulativeAmount / cumulativeVolume : null;
+    });
+    const hasAverage = averagePrices.some(value =>
+      Number.isFinite(value));
+    const hasVolume = volumes.some(value => value > 0);
+    const marks = [...(rawMarks || [])];
+    if (!marks.some(mark => Number(mark[1]) === 1)) {
+      const candidate = candidateDays()
+        .find(item => item.date === date)?.candidates
+        ?.find(item => item.selection?.code === state.code);
+      if (candidate) {
+        const selection = candidate.selection;
+        let index = points.findIndex(
+          point => point[0] === selection.signal_time);
+        if (index < 0) {
+          index = points.findIndex(
+            point => point[0] > selection.signal_time);
+        }
+        if (index >= 0) {
+          marks.push([
+            points[index][0], 1, selection.strength,
+            selection.retention_probability, prices[index],
+          ]);
+        }
+      }
+    }
     const span = Math.max(
       previousClose * 0.003,
       ...prices.map(price => Math.abs(price - previousClose)),
@@ -690,14 +872,17 @@
         },
       };
     });
-    const ticks = index => [
-      0, 11, 24, 35, 47,
-    ].includes(index);
+    const ticks = (index, value) =>
+      index === 0 || index === times.length - 1
+      || ['10:30', '11:30', '14:00', '15:00'].includes(value);
+    const legend = ['价格'];
+    if (hasAverage) legend.push('当日均价');
+    if (hasVolume) legend.push('成交量');
     chart('stock-detail-chart', {
       animation: false,
       legend: {
         top: 2, right: 12,
-        data: ['价格', 'MA5', 'MA10'],
+        data: legend,
         textStyle: { color: '#94a3a8' },
       },
       tooltip: {
@@ -709,7 +894,7 @@
             Number(price.value) / previousClose - 1
           ) * 100;
           const averages = items
-            .filter(item => item.seriesName.startsWith('MA'))
+            .filter(item => item.seriesName === '当日均价')
             .map(item =>
               `${item.seriesName} ${num(item.value, 2)}`)
             .join('　');
@@ -718,9 +903,11 @@
             + (averages ? `<br>${averages}` : '');
         },
       },
-      grid: [
-        { left: 58, right: 18, top: 62, height: '52%' },
+      grid: hasVolume ? [
+        { left: 58, right: 18, top: 82, height: '46%' },
         { left: 58, right: 18, top: '76%', height: '11%' },
+      ] : [
+        { left: 58, right: 18, top: 82, bottom: 48 },
       ],
       xAxis: [
         {
@@ -732,11 +919,11 @@
             formatter: value => value,
           },
         },
-        {
+        ...(hasVolume ? [{
           ...axisBase(), type: 'category', gridIndex: 1,
           data: times, boundaryGap: true,
           axisLabel: { show: false },
-        },
+        }] : []),
       ],
       yAxis: [
         {
@@ -754,10 +941,10 @@
             },
           },
         },
-        {
+        ...(hasVolume ? [{
           ...axisBase(), type: 'value', gridIndex: 1,
           axisLabel: { show: false },
-        },
+        }] : []),
       ],
       series: [
         {
@@ -779,19 +966,13 @@
             data: [{ yAxis: Number(previousClose) }],
           },
         },
-        {
-          name: 'MA5', type: 'line', data: ma5,
+        ...(hasAverage ? [{
+          name: '当日均价', type: 'line', data: averagePrices,
           showSymbol: false, connectNulls: false,
           lineStyle: { width: 1.3, color: '#e5b94f' },
           itemStyle: { color: '#e5b94f' },
-        },
-        {
-          name: 'MA10', type: 'line', data: ma10,
-          showSymbol: false, connectNulls: false,
-          lineStyle: { width: 1.3, color: '#55c5c7' },
-          itemStyle: { color: '#55c5c7' },
-        },
-        {
+        }] : []),
+        ...(hasVolume ? [{
           name: '成交量', type: 'bar',
           xAxisIndex: 1, yAxisIndex: 1,
           data: volumes.map((value, index) => ({
@@ -802,7 +983,7 @@
                 : 'rgba(63,194,139,.52)',
             },
           })),
-        },
+        }] : []),
       ],
     });
     const labels = marks.map(mark => {
@@ -811,7 +992,8 @@
       return `${clock(mark[0])} ${strength}${direction}`;
     });
     $('#stock-market-status').textContent =
-      `${date} 前复权5分钟 · 昨收 ${num(previousClose, 3)} · ${labels.join(' · ')}`;
+      `${date} 前复权${frequency || '分时'} · ${source || '历史行情'} · 昨收 ${num(previousClose, 3)}`
+      + (labels.length ? ` · ${labels.join(' · ')}` : '');
   }
 
   function syncStockMinuteNavigation() {
