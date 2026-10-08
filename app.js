@@ -105,7 +105,7 @@
 
   function renderHeader() {
     $('#generated-at').textContent = `数据生成 ${dt(DATA.generated_at)}`;
-    const health = DATA.paper?.health || {};
+    const health = DATA.trend_validation || DATA.paper?.health || {};
     const status = health.status || 'unknown';
     $('#live-state').textContent = status === 'ready'
       ? '盘中就绪' : status === 'waiting_market' ? '等待开市' : status;
@@ -1130,6 +1130,8 @@
 
   function renderPaper() {
     const summary = PAPER?.summary || DATA.paper?.summary || {};
+    const live = DATA.trend_live || {};
+    const validation = DATA.trend_validation || {};
     $('#paper-kpis').innerHTML = [
       kpi('独立账户', num(summary.account_count), cny(summary.initial_capital)),
       kpi('已实现盈亏', cny(summary.realized_pnl), '', tone(summary.realized_pnl)),
@@ -1137,12 +1139,45 @@
       kpi('净盈亏', cny(summary.net_pnl), '', tone(summary.net_pnl)),
       kpi('持仓', `${num(summary.holding_count)} 只`, `待卖 ${num(summary.pending_exit_count)}`),
       kpi('模拟成交', `${num(summary.fill_count)} 笔`, '不连接券商'),
+      kpi('目标池采集覆盖', pct(
+        validation.target_coverage ?? live.coverage),
+      `${num(
+        validation.target_valid_count ?? live.valid_count
+      )} / ${num(
+        validation.target_universe_count ?? live.universe_count
+      )} 只`),
+      kpi('首次多空信号', `${num(validation.first_signal_count)} 条`,
+        `首批 ${dt(validation.first_batch_quote_at)}`),
     ].join('');
-    const health = DATA.paper?.health || {};
+    const health = validation.status
+      ? validation : DATA.paper?.health || {};
     $('#paper-status').textContent = health.status || '—';
-    $('#paper-snapshot').textContent = dt(PAPER?.last_snapshot_at || DATA.paper?.last_snapshot_at);
+    $('#paper-snapshot').textContent = dt(
+      validation.generated_at
+      || PAPER?.last_snapshot_at
+      || DATA.paper?.last_snapshot_at);
     $('#paper-next-day').textContent = health.next_trading_day || '—';
     $('#paper-contract').textContent = PAPER?.contract || DATA.paper?.contract || '—';
+    const firstBatch = validation.first_batch || [];
+    const firstStatus = $('#validation-first-status');
+    firstStatus.textContent = firstBatch.length
+      ? `${num(firstBatch.length)} 只` : '等待首批';
+    firstStatus.className = `status ${firstBatch.length ? 'ok' : 'bad'}`;
+    $('#validation-first-table').innerHTML = `<thead><tr>
+      <th>源时间</th><th>代码</th><th>名称</th><th>行业/板块</th>
+      <th>方向</th><th>强弱</th><th>源报价</th><th>前收盘</th>
+      <th>涨跌幅</th><th>来源</th>
+    </tr></thead><tbody>${firstBatch.length ? firstBatch.map(row => {
+      const long = Number(row.direction) === 1;
+      return `<tr><td>${esc(dt(row.quote_at))}</td>
+        <td>${esc(row.code)}</td><td>${esc(row.name)}</td>
+        <td>${esc(row.industry || '—')}</td>
+        <td class="${long ? 'up' : 'down'}">${long ? '多' : '空'}</td>
+        <td>${row.strength === 'strong' ? '强' : '弱'}</td>
+        <td>${num(row.price, 2)}</td><td>${num(row.previous_close, 2)}</td>
+        <td class="${tone(row.change)}">${pct(row.change)}</td>
+        <td>${row.source === 'tencent' ? '腾讯' : esc(row.source)}</td></tr>`;
+    }).join('') : emptyRow(10, '尚未形成今日首批信号')}</tbody>`;
     const accounts = (PAPER?.stocks || []).filter(row =>
       row.quantity || row.status !== 'cash' || row.net_pnl);
     $('#paper-stocks').innerHTML = `<thead><tr><th>代码</th><th>名称</th><th>状态</th><th>数量</th><th>标记价</th><th>市值</th><th>浮动盈亏</th><th>净盈亏</th></tr></thead>
@@ -1308,7 +1343,8 @@
       backtest: '历史回测', weak_compare: '强弱信号比较',
       triggers: '分钟触发', paper: '模拟账本',
       paper_health: '模拟心跳', paper_validation: '分钟验收',
-      trend_live: '实时扫描', early_exit: '提前空点',
+      trend_live: '实时扫描', trend_validation: '实盘验证证据',
+      early_exit: '提前空点',
       winner_profile: '赢家画像', winner_commonality: '大涨股共性',
       winner_announcements: '官方公告增量',
       winner_onset: '首次多头',

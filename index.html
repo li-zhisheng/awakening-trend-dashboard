@@ -130,10 +130,17 @@
     <section id="view-paper" class="view">
       <div id="paper-kpis" class="kpi-grid"></div>
       <section class="status-band">
-        <div><span>运行状态</span><strong id="paper-status">--</strong></div>
-        <div><span>最近快照</span><strong id="paper-snapshot">--</strong></div>
+        <div><span>独立采集状态</span><strong id="paper-status">--</strong></div>
+        <div><span>采集快照</span><strong id="paper-snapshot">--</strong></div>
         <div><span>下一交易日</span><strong id="paper-next-day">--</strong></div>
         <div><span>成交契约</span><strong id="paper-contract">--</strong></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>今日首批多空信号</h2><p>源行情时间、源报价、前收盘及涨跌幅原样留痕</p></div>
+          <span id="validation-first-status" class="status"></span>
+        </div>
+        <div class="table-wrap"><table id="validation-first-table"></table></div>
       </section>
       <section class="panel">
         <div class="panel-head">
