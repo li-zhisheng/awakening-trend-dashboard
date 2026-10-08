@@ -12,10 +12,10 @@
   const stockMinuteCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
   const signalColors = {
-    strongLong: '#b71c1c',
-    weakLong: '#f48fb1',
-    strongShort: '#0b5d3b',
-    weakShort: '#4fd1a1',
+    strongLong: '#ef6666',
+    weakLong: '#ef6666',
+    strongShort: '#3fc28b',
+    weakShort: '#3fc28b',
   };
   const minuteClocks = [
     ...Array.from({ length: 24 }, (_, index) => {
@@ -52,6 +52,14 @@
     : String(value || '—');
   const tone = (value) => Number(value) > 0
     ? 'up' : Number(value) < 0 ? 'down' : 'neutral';
+  const isLongSignal = direction =>
+    Number(direction) === 1 || direction === 'LONG';
+  const signalLabel = (direction, strength) => {
+    const long = isLongSignal(direction);
+    return strength === 'weak'
+      ? (long ? '涨' : '跌')
+      : (long ? '多' : '空');
+  };
   const emptyRow = (columns, text = '暂无数据') =>
     `<tr><td class="empty" colspan="${columns}">${esc(text)}</td></tr>`;
 
@@ -199,7 +207,7 @@
     const evaluation = day?.evaluation || {};
     $('#candidate-kpis').innerHTML = [
       kpi('当日待定票', `${num(day?.candidate_count || 0)} 只`,
-        `强多 ${num(day?.strong_candidate_count || 0)} · 弱多 ${num(day?.weak_candidate_count || 0)}`),
+        `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         '信号时间不晚于 10:00'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
@@ -219,7 +227,7 @@
       censored: '后续样本不足',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号</th><th>代码</th><th>名称</th><th>行业/板块</th><th>强弱</th><th>画像分</th>
+      <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>画像分</th>
       <th>5日波动排名</th><th>20日波动排名</th><th>位置压力排名</th>
       <th>信号时涨幅</th><th>验证状态</th><th>最终收益</th>
       <th>最大浮盈</th><th>最大浮亏</th>
@@ -230,7 +238,7 @@
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
         <td>${esc(selection.industry || '—')}</td>
-        <td class="neutral">${selection.strength === 'strong' ? '强多' : '弱多'}</td>
+        <td class="up">${signalLabel(1, selection.strength)}</td>
         <td>${num(selection.score, 3)}</td>
         <td>${pct(selection.volatility_5_rank, 0)}</td>
         <td>${pct(selection.volatility_20_rank, 0)}</td>
@@ -534,15 +542,16 @@
       if (!bar || ![1, -1].includes(direction)) return null;
       const long = direction === 1;
       const strong = strength === 'strong';
+      const label = signalLabel(direction, strength);
       const color = long
         ? (strong ? signalColors.strongLong : signalColors.weakLong)
         : (strong ? signalColors.strongShort : signalColors.weakShort);
       return {
-        name: strong
-          ? (long ? '强多' : '强空')
-          : (long ? '弱多' : '弱空'),
+        name: label,
+        direction,
+        strength,
         coord: [index, long ? Number(bar[3]) : Number(bar[2])],
-        value: long ? '多' : '空',
+        value: label,
         symbol: 'circle',
         symbolSize: strong ? 28 : 22,
         symbolOffset: [0, long ? '68%' : '-68%'],
@@ -554,10 +563,10 @@
         },
         label: {
           show: true,
-          color: strong ? '#ffffff' : '#182126',
+          color: '#ffffff',
           fontSize: strong ? 11 : 9,
           fontWeight: 700,
-          formatter: long ? '多' : '空',
+          formatter: label,
         },
         probability,
       };
@@ -573,10 +582,13 @@
       const bar = daily.bars[index];
       const long = signal.direction === 1;
       const strong = signal.strength === 'strong';
+      const label = signalLabel(signal.direction, signal.strength);
       result.push({
-        name: long ? '盘中首多' : '盘中首空',
+        name: `盘中首${label}`,
+        direction: signal.direction,
+        strength: signal.strength,
         coord: [index, long ? Number(bar[3]) : Number(bar[2])],
-        value: long ? '首多' : '首空',
+        value: label,
         symbol: 'diamond',
         symbolSize: 22,
         itemStyle: {
@@ -587,12 +599,12 @@
         },
         label: {
           show: true, color: '#ffffff', fontSize: 9,
-          fontWeight: 700, formatter: long ? '首多' : '首空',
+          fontWeight: 700, formatter: label,
         },
       });
     }
     const existingLongDates = new Set(
-      result.filter(mark => mark.name.includes('多'))
+      result.filter(mark => Number(mark.direction) === 1)
         .map(mark => dates[mark.coord[0]]));
     for (const day of candidateDays()) {
       for (const item of day.candidates || []) {
@@ -605,10 +617,13 @@
         if (index < 0) continue;
         const bar = daily.bars[index];
         const strong = selection.strength === 'strong';
+        const label = signalLabel(1, selection.strength);
         result.push({
-          name: '待定首次多头',
+          name: `待定${label}`,
+          direction: 1,
+          strength: selection.strength,
           coord: [index, Number(bar[3])],
-          value: '待定多',
+          value: label,
           symbol: 'pin',
           symbolSize: 28,
           symbolOffset: [0, '60%'],
@@ -619,7 +634,7 @@
           },
           label: {
             show: true, color: '#ffffff', fontSize: 9,
-            fontWeight: 700, formatter: '待定多',
+            fontWeight: 700, formatter: label,
           },
         });
         existingLongDates.add(day.date);
@@ -764,10 +779,10 @@
       setStockMarketView('minute');
     });
     const strong = marks.filter(mark =>
-      mark.name.startsWith('强')).length;
+      mark.strength === 'strong').length;
     const weak = marks.length - strong;
     $('#stock-market-status').textContent =
-      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 点击任意K线查看当天分时`;
+      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 多/空 ${strong} · 涨/跌 ${weak} · 点击任意K线查看当天分时`;
   }
 
   function renderStockMinute() {
@@ -831,22 +846,18 @@
       const index = times.indexOf(time);
       const long = Number(mark[1]) === 1;
       const weak = mark[2] === 'weak';
+      const label = signalLabel(mark[1], mark[2]);
       const price = Number(mark[4]);
       const change = (price / previousClose - 1) * 100;
       const color = long
         ? (weak ? signalColors.weakLong : signalColors.strongLong)
         : (weak ? signalColors.weakShort : signalColors.strongShort);
-      const action = weak
-        ? (long ? '弱买' : '弱卖')
-        : (long ? '买' : '卖');
       const changeText =
         `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
       return {
-        name: weak
-          ? (long ? '弱多买入' : '弱空卖出')
-          : (long ? '多头买入' : '空头卖出'),
+        name: label,
         coord: [index, price],
-        value: `${action} ${changeText}`,
+        value: `${label} ${changeText}`,
         symbol: 'circle',
         symbolSize: weak ? 12 : 16,
         symbolOffset: [0, long ? '-55%' : '55%'],
@@ -868,7 +879,7 @@
           fontSize: weak ? 9 : 10,
           lineHeight: 14,
           fontWeight: 700,
-          formatter: `${action} ${changeText}\n${price.toFixed(2)}`,
+          formatter: `${label} ${changeText}\n${price.toFixed(2)}`,
         },
       };
     });
@@ -987,9 +998,7 @@
       ],
     });
     const labels = marks.map(mark => {
-      const direction = Number(mark[1]) === 1 ? '多买入' : '空卖出';
-      const strength = mark[2] === 'strong' ? '强' : '弱';
-      return `${clock(mark[0])} ${strength}${direction}`;
+      return `${clock(mark[0])} ${signalLabel(mark[1], mark[2])}`;
     });
     $('#stock-market-status').textContent =
       `${date} 前复权${frequency || '分时'} · ${source || '历史行情'} · 昨收 ${num(previousClose, 3)}`
@@ -1165,19 +1174,18 @@
     firstStatus.className = `status ${firstBatch.length ? 'ok' : 'bad'}`;
     $('#validation-first-table').innerHTML = `<thead><tr>
       <th>源时间</th><th>代码</th><th>名称</th><th>行业/板块</th>
-      <th>方向</th><th>强弱</th><th>源报价</th><th>前收盘</th>
+      <th>信号</th><th>源报价</th><th>前收盘</th>
       <th>涨跌幅</th><th>来源</th>
     </tr></thead><tbody>${firstBatch.length ? firstBatch.map(row => {
       const long = Number(row.direction) === 1;
       return `<tr><td>${esc(dt(row.quote_at))}</td>
         <td>${esc(row.code)}</td><td>${esc(row.name)}</td>
         <td>${esc(row.industry || '—')}</td>
-        <td class="${long ? 'up' : 'down'}">${long ? '多' : '空'}</td>
-        <td>${row.strength === 'strong' ? '强' : '弱'}</td>
+        <td class="${long ? 'up' : 'down'}">${signalLabel(row.direction, row.strength)}</td>
         <td>${num(row.price, 2)}</td><td>${num(row.previous_close, 2)}</td>
         <td class="${tone(row.change)}">${pct(row.change)}</td>
         <td>${row.source === 'tencent' ? '腾讯' : esc(row.source)}</td></tr>`;
-    }).join('') : emptyRow(10, '尚未形成今日首批信号')}</tbody>`;
+    }).join('') : emptyRow(9, '尚未形成今日首批信号')}</tbody>`;
     const accounts = (PAPER?.stocks || []).filter(row =>
       row.quantity || row.status !== 'cash' || row.net_pnl);
     $('#paper-stocks').innerHTML = `<thead><tr><th>代码</th><th>名称</th><th>状态</th><th>数量</th><th>标记价</th><th>市值</th><th>浮动盈亏</th><th>净盈亏</th></tr></thead>
@@ -1190,10 +1198,10 @@
       <td class="${row.side === 'buy' ? 'up' : 'down'}">${row.side === 'buy' ? '买入' : '卖出'}</td><td>${num(row.price, 3)}</td><td>${num(row.quantity)}</td>
       <td class="${tone(row.pnl)}">${cny(row.pnl)}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
     const signals = PAPER?.recent_signals || [];
-    $('#paper-signals').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>方向</th><th>强度</th><th>状态</th><th>原因</th></tr></thead>
+    $('#paper-signals').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>信号</th><th>状态</th><th>原因</th></tr></thead>
       <tbody>${signals.length ? signals.map(row => `<tr><td>${dt(row.observed_at)}</td><td>${esc(row.code)}</td>
-      <td class="${row.direction === 'LONG' ? 'up' : 'down'}">${esc(row.direction)}</td><td>${esc(row.strength)}</td>
-      <td>${esc(row.status)}</td><td>${esc(row.reason)}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
+      <td class="${row.direction === 'LONG' ? 'up' : 'down'}">${signalLabel(row.direction, row.strength)}</td>
+      <td>${esc(row.status)}</td><td>${esc(row.reason)}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
   }
 
   function renderResearch() {
@@ -1326,11 +1334,11 @@
       ['实时成交', contracts.live_entry],
       ['真实交易控制', contracts.live_controls_trading ? '已启用' : '未启用，只读模拟'],
       ['每日待定票', DATA.daily_candidates?.contract?.selection],
-      ['待定票强弱分类', DATA.daily_candidates?.contract?.signal_strength],
+      ['待定票信号分类', DATA.daily_candidates?.contract?.signal_strength],
       ['待定票未来收益参与', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
       ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
       ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
-      ['弱空退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
+      ['跌信号退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
       ['历史收益契约', DATA.history?.return_contract],
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
