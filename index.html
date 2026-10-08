@@ -8,7 +8,7 @@
   <title>多空指标 · 历史回测与实盘验证</title>
   <link rel="stylesheet" href="styles.css?v=20261008-dynamic-entry-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261008-volume-direction-v1" defer></script>
+  <script src="app.js?v=20261008-minute-entry-v2" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -72,7 +72,7 @@
         <div><span>早盘全量账户</span><strong id="candidate-account-baseline">--</strong></div>
         <div><span>可买候选账户</span><strong id="candidate-account-return">--</strong></div>
         <div><span>同口径改善</span><strong id="candidate-account-delta">--</strong></div>
-        <div><span>高机会观察账户</span><strong id="candidate-formal-reference">--</strong></div>
+        <div><span>原始观察对照</span><strong id="candidate-formal-reference">--</strong></div>
       </section>
       <section class="status-band candidate-strength-summary">
         <div><span>仅多候选</span><strong id="candidate-strong-return">--</strong></div>
@@ -83,11 +83,15 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>最大浮盈机会风险观察</h2>
-            <p>机会风险、板块共振、个股相对强度与分钟价格路径联合观察；每日重点显示2只</p>
+            <h2>动态买入机会</h2>
+            <p>默认只显示已满足入场条件的股票；高位和待企稳信号保留在观察池</p>
           </div>
-          <span id="candidate-hash" class="hash-label">--</span>
+          <div class="segmented" role="tablist" aria-label="机会范围">
+            <button class="active" type="button" data-candidate-scope="buyable" role="tab" aria-selected="true">可买</button>
+            <button type="button" data-candidate-scope="all" role="tab" aria-selected="false">全部观察</button>
+          </div>
         </div>
+        <div id="candidate-hash" class="hash-label">--</div>
         <div class="table-wrap candidate-table-wrap">
           <table id="candidate-table"></table>
         </div>

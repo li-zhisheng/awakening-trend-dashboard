@@ -5,6 +5,7 @@
   let PAPER = null;
   let stockMarketState = null;
   let stockPage = 1;
+  let candidateScope = 'buyable';
   const pageSize = 80;
   const charts = new Map();
   const stockDetailCache = new Map();
@@ -51,8 +52,17 @@
   const clock = (value) => /^\d{4}$/.test(String(value || ''))
     ? `${String(value).slice(0, 2)}:${String(value).slice(2)}`
     : String(value || '—');
+  const industryName = value =>
+    String(value || '').replace(/^[A-Z]\d{2}/, '').trim() || '—';
   const tone = (value) => Number(value) > 0
     ? 'up' : Number(value) < 0 ? 'down' : 'neutral';
+  const stockSymbol = code => {
+    const value = String(code || '');
+    if (!/^\d{6}$/.test(value)) return '';
+    return `${value.startsWith('6') ? 'sh' : 'sz'}${value}`;
+  };
+  const stockLink = (code, label, extraClass = '') =>
+    `<button class="stock-link ${extraClass}" data-code="${esc(code)}">${esc(label)}</button>`;
   const isLongSignal = direction =>
     Number(direction) === 1 || direction === 'LONG';
   const signalLabel = (direction, strength) => {
@@ -220,10 +230,24 @@
     return value === null || value === undefined ? '—' : pct(value);
   }
 
+  function isBuyableCandidate(item) {
+    const selection = item?.selection || {};
+    if (selection.entry_status) {
+      return selection.entry_ready === true;
+    }
+    return (
+      selection.entry_eligible !== false
+      && item?.evaluation?.status !== 'live_legacy_review'
+    );
+  }
+
   function renderCandidateDate(value) {
     const days = candidateDays();
     const index = days.findIndex(day => day.date === value);
     const day = index >= 0 ? days[index] : null;
+    const allRows = day?.candidates || [];
+    const buyableRows = allRows.filter(isBuyableCandidate);
+    const rows = candidateScope === 'all' ? allRows : buyableRows;
     const input = $('#candidate-date');
     input.value = value || '';
     $('#candidate-prev').disabled = index <= 0;
@@ -240,16 +264,11 @@
     const dynamicEntry = day?.entry_model?.mode === 'dynamic_shadow_only';
     $('#candidate-kpis').innerHTML = [
       kpi(
-        day?.mode === 'live_shadow'
-          && day.opportunity_model_applied === false
-          ? '旧口径复盘'
-          : dynamicEntry ? '动态入场观察' : '高机会观察',
-        `${num(day?.candidate_count || 0)} 只`,
+        '当前可买机会',
+        `${num(buyableRows.length)} 只`,
         dynamicEntry
-          ? `影子就绪 ${num(day?.ready_candidate_count || 0)} · 等回落 ${num(day?.wait_pullback_count || 0)}`
-          : day?.eligible_candidate_count != null
-          ? `旧门槛可买 ${num(day?.eligible_candidate_count || 0)} · 高位观察 ${num(day?.high_return_rejected_count || 0)}`
-          : `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
+          ? `等待回落 ${num(day?.wait_pullback_count || 0)} · 全部观察 ${num(allRows.length)}`
+          : `不可买/旧口径 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
@@ -271,7 +290,11 @@
         '仅作事后验证'),
     ].join('');
 
-    const rows = day?.candidates || [];
+    document.querySelectorAll('[data-candidate-scope]').forEach(button => {
+      const active = button.dataset.candidateScope === candidateScope;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
     const statusLabel = {
       complete: '验证完成',
       unfilled: '下一周期未成交',
@@ -317,7 +340,7 @@
       return `<tr><td>${esc(signalTime)}${signalPrice}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
-        <td>${esc(selection.industry || '—')}</td>
+        <td>${esc(industryName(selection.industry))}</td>
         <td class="up">${signalLabel(1, selection.strength)}</td>
         <td>${selection.score == null ? '—' : num(selection.score, 3)}</td>
         <td>${selection.profit_10_before_loss_5_probability == null
@@ -338,7 +361,14 @@
         <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
-    }).join('') : emptyRow(21, day ? '当日没有股票达到机会风险阈值' : '该日期没有交易日样本')}</tbody>`;
+    }).join('') : emptyRow(
+      21,
+      day
+        ? candidateScope === 'buyable'
+          ? '当日没有满足动态买入条件的股票'
+          : '当日没有股票进入观察池'
+        : '该日期没有交易日样本',
+    )}</tbody>`;
     document.querySelectorAll('.candidate-stock-link').forEach(button => {
       button.addEventListener('click', () => openStock(button.dataset.code));
     });
@@ -546,68 +576,230 @@
     return stockLiveCache.get(code);
   }
 
-  async function loadStockMinutes(code) {
-    if (!stockMinuteCache.has(code)) {
-      const value = await loadFirst([
-        `minutes/${code.slice(0, 2)}/${code}.json`,
-      ]);
-      if (![
-        'awakening-trend-all-day-minutes-v2',
-        'awakening-trend-all-day-minutes-v3',
-        'awakening-trend-all-day-minutes-v4',
-      ].includes(value.schema) || value.code !== code
-        || !Array.isArray(value.days)) {
-        throw new Error('分时数据不完整');
+  function dailyMinuteContext(daily, date) {
+    const bars = daily?.bars || [];
+    const index = bars.findIndex(row =>
+      String(row[0]).replaceAll('-', '') === date);
+    if (index < 0) return {};
+    return {
+      close: Number(bars[index][4]),
+      previousClose: index > 0
+        ? Number(bars[index - 1][4])
+        : Number(daily.prior_close),
+    };
+  }
+
+  function parseTencentMinuteRows(
+    rawRows, date, daily, rawPreviousClose = null,
+  ) {
+    const unique = new Map();
+    for (const raw of rawRows || []) {
+      if (typeof raw !== 'string') continue;
+      const [time, rawPrice, rawVolume, rawAmount] =
+        raw.trim().split(/\s+/);
+      const regular = /^\d{4}$/.test(time) && (
+        ('0930' <= time && time <= '1130')
+        || ('1300' <= time && time <= '1500')
+      );
+      const price = Number(rawPrice);
+      const cumulativeHands = Number(rawVolume);
+      const cumulativeAmount = Number(rawAmount);
+      if (
+        !regular || !Number.isFinite(price) || price <= 0
+        || !Number.isFinite(cumulativeHands) || cumulativeHands < 0
+      ) continue;
+      unique.set(time, {
+        time, price, cumulativeHands,
+        cumulativeAmount: Number.isFinite(cumulativeAmount)
+          ? cumulativeAmount : null,
+      });
+    }
+    const rows = [...unique.values()].sort(
+      (left, right) => left.time.localeCompare(right.time));
+    if (!rows.length) throw new Error('腾讯分钟行情无有效数据');
+    const context = dailyMinuteContext(daily, date);
+    const factor = Number.isFinite(context.close) && context.close > 0
+      ? context.close / rows.at(-1).price : 1;
+    const previousClose = (
+      Number.isFinite(context.previousClose)
+      && context.previousClose > 0
+    ) ? context.previousClose : Number(rawPreviousClose) * factor;
+    if (!Number.isFinite(previousClose) || previousClose <= 0) {
+      throw new Error('腾讯分钟行情缺少前收盘');
+    }
+    let previousHands = 0;
+    let previousAmount = 0;
+    const points = rows.map(row => {
+      if (
+        row.cumulativeHands < previousHands
+        || (
+          row.cumulativeAmount != null
+          && row.cumulativeAmount < previousAmount
+        )
+      ) {
+        throw new Error('腾讯分钟累计成交量异常');
       }
-      const days = value.days.map(day => {
-        const legacy = value.schema.endsWith('-v2');
-        const [date, previousClose] = day;
-        const clocks = minuteClocks;
-        const deltas = day[2];
-        const volumes = day[3];
-        const averageDeltas = legacy ? null : day[5];
-        const marks = day[4];
-        if (
-          !Array.isArray(clocks)
-          || !Array.isArray(deltas)
-          || !Array.isArray(volumes)
-          || deltas.length !== clocks.length
-          || volumes.length !== clocks.length
-          || (
-            averageDeltas != null
-            && (
-              !Array.isArray(averageDeltas)
-              || averageDeltas.length !== clocks.length
-            )
-          )
-        ) {
-          throw new Error(`分时数据不完整: ${date}`);
-        }
-        let scaledPrice = 0;
-        let scaledAverage = 0;
-        const points = deltas.map((delta, index) => {
-          scaledPrice = index === 0
-            ? Number(delta)
-            : scaledPrice + Number(delta);
-          if (averageDeltas) {
-            scaledAverage = index === 0
-              ? Number(averageDeltas[index])
-              : scaledAverage + Number(averageDeltas[index]);
+      const volume = (row.cumulativeHands - previousHands) * 100;
+      const amount = row.cumulativeAmount == null
+        ? null : row.cumulativeAmount - previousAmount;
+      previousHands = row.cumulativeHands;
+      if (row.cumulativeAmount != null) {
+        previousAmount = row.cumulativeAmount;
+      }
+      const average = (
+        row.cumulativeAmount != null && row.cumulativeHands > 0
+      ) ? row.cumulativeAmount / (row.cumulativeHands * 100) * factor
+        : null;
+      return [
+        row.time, row.price * factor, volume, amount, average,
+      ];
+    });
+    return [
+      `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}`,
+      previousClose, points, [], '腾讯在线分钟价量',
+      '1分钟', null,
+    ];
+  }
+
+  function parseTencentMinutePayloads(
+    currentPayload, historyPayload, symbol, daily,
+  ) {
+    const result = [];
+    const historyDays = historyPayload?.data?.[symbol]?.data;
+    if (historyPayload?.code === 0 && Array.isArray(historyDays)) {
+      for (const day of historyDays) {
+        const date = String(day?.date || '');
+        if (/^\d{8}$/.test(date) && Array.isArray(day.data)) {
+          try {
+            result.push(parseTencentMinuteRows(
+              day.data, date, daily));
+          } catch (_error) {
+            // One malformed day must not discard other valid minute days.
           }
+        }
+      }
+    }
+    const current = currentPayload?.data?.[symbol];
+    const currentDate = String(current?.data?.date || '');
+    const quote = current?.qt?.[symbol];
+    if (
+      currentPayload?.code === 0
+      && /^\d{8}$/.test(currentDate)
+      && Array.isArray(current?.data?.data)
+      && Array.isArray(quote)
+    ) {
+      try {
+        const day = parseTencentMinuteRows(
+          current.data.data, currentDate, daily, Number(quote[4]));
+        const index = result.findIndex(item => item[0] === day[0]);
+        if (index >= 0) result[index] = day;
+        else result.push(day);
+      } catch (_error) {
+        // Valid historical minute days can still be used.
+      }
+    }
+    return result;
+  }
+
+  async function loadTencentMinutes(code, daily) {
+    const symbol = stockSymbol(code);
+    if (!symbol) return [];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const suffix = `&_=${Date.now()}`;
+    const urls = [
+      `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${symbol}${suffix}`,
+      `https://web.ifzq.gtimg.cn/appstock/app/day/query?code=${symbol}${suffix}`,
+    ];
+    let results;
+    try {
+      results = await Promise.allSettled(urls.map(async url => {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          credentials: 'omit', cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      }));
+    } finally {
+      clearTimeout(timeout);
+    }
+    const current = results[0].status === 'fulfilled'
+      ? results[0].value : null;
+    const history = results[1].status === 'fulfilled'
+      ? results[1].value : null;
+    return parseTencentMinutePayloads(
+      current, history, symbol, daily);
+  }
+
+  async function loadStockMinutes(code, daily) {
+    if (!stockMinuteCache.has(code)) {
+      let value = null;
+      let days = [];
+      try {
+        value = await loadFirst([
+          `minutes/${code.slice(0, 2)}/${code}.json`,
+        ]);
+        if (![
+          'awakening-trend-all-day-minutes-v2',
+          'awakening-trend-all-day-minutes-v3',
+          'awakening-trend-all-day-minutes-v4',
+        ].includes(value.schema) || value.code !== code
+          || !Array.isArray(value.days)) {
+          throw new Error('分时数据不完整');
+        }
+        days = value.days.map(day => {
+          const legacy = value.schema.endsWith('-v2');
+          const [date, previousClose] = day;
+          const clocks = minuteClocks;
+          const deltas = day[2];
+          const volumes = day[3];
+          const averageDeltas = legacy ? null : day[5];
+          const marks = day[4];
+          if (
+            !Array.isArray(deltas)
+            || !Array.isArray(volumes)
+            || deltas.length !== clocks.length
+            || volumes.length !== clocks.length
+            || (
+              averageDeltas != null
+              && (
+                !Array.isArray(averageDeltas)
+                || averageDeltas.length !== clocks.length
+              )
+            )
+          ) {
+            throw new Error(`分时数据不完整: ${date}`);
+          }
+          let scaledPrice = 0;
+          let scaledAverage = 0;
+          const points = deltas.map((delta, index) => {
+            scaledPrice = index === 0
+              ? Number(delta)
+              : scaledPrice + Number(delta);
+            if (averageDeltas) {
+              scaledAverage = index === 0
+                ? Number(averageDeltas[index])
+                : scaledAverage + Number(averageDeltas[index]);
+            }
+            return [
+              clocks[index],
+              scaledPrice / 10000,
+              Number(volumes[index]),
+              null,
+              averageDeltas ? scaledAverage / 10000 : null,
+            ];
+          });
           return [
-            clocks[index],
-            scaledPrice / 10000,
-            Number(volumes[index]),
-            null,
-            averageDeltas ? scaledAverage / 10000 : null,
+            date, previousClose, points, marks || [],
+            'BaoStock 历史5分钟价量数据',
+            '5分钟', null,
           ];
         });
-        return [
-          date, previousClose, points, marks || [],
-          'BaoStock 历史5分钟价量数据',
-          legacy ? '5分钟' : '5分钟', null,
-        ];
-      });
+      } catch (_error) {
+        value = null;
+        days = [];
+      }
       const live = await loadStockLive(code);
       if (live) {
         try {
@@ -628,7 +820,26 @@
           // Historical data remains available when the live store is empty.
         }
       }
-      stockMinuteCache.set(code, { ...value, days });
+      try {
+        for (const online of await loadTencentMinutes(code, daily)) {
+          const index = days.findIndex(item => item[0] === online[0]);
+          const persisted = index >= 0 ? days[index] : null;
+          online[3] = persisted?.[3] || [];
+          online[6] = persisted?.[6] || null;
+          if (index >= 0) days[index] = online;
+          else days.push(online);
+        }
+        days.sort((left, right) => left[0].localeCompare(right[0]));
+      } catch (_error) {
+        // Persisted one-minute evidence and BaoStock history remain available.
+      }
+      if (!days.length) throw new Error('分时数据暂不可用');
+      stockMinuteCache.set(code, {
+        ...(value || {}),
+        code,
+        schema: value?.schema || 'awakening-trend-online-minutes-v1',
+        days,
+      });
     }
     return stockMinuteCache.get(code);
   }
@@ -1210,7 +1421,8 @@
   async function ensureStockMinutes(state) {
     if (state.minute) return true;
     if (!state.minutePromise) {
-      state.minutePromise = loadStockMinutes(state.code);
+      state.minutePromise = loadStockMinutes(
+        state.code, state.daily);
     }
     try {
       const minute = await state.minutePromise;
@@ -1357,8 +1569,9 @@
     </tr></thead><tbody>${firstBatch.length ? firstBatch.map(row => {
       const long = Number(row.direction) === 1;
       return `<tr><td>${esc(dt(row.quote_at))}</td>
-        <td>${esc(row.code)}</td><td>${esc(row.name)}</td>
-        <td>${esc(row.industry || '—')}</td>
+        <td>${stockLink(row.code, row.code, 'paper-stock-link')}</td>
+        <td>${stockLink(row.code, row.name, 'paper-stock-link')}</td>
+        <td>${esc(industryName(row.industry))}</td>
         <td class="${long ? 'up' : 'down'}">${signalLabel(row.direction, row.strength)}</td>
         <td>${num(row.price, 2)}</td><td>${num(row.previous_close, 2)}</td>
         <td class="${tone(row.change)}">${pct(row.change)}</td>
@@ -1367,19 +1580,23 @@
     const accounts = (PAPER?.stocks || []).filter(row =>
       row.quantity || row.status !== 'cash' || row.net_pnl);
     $('#paper-stocks').innerHTML = `<thead><tr><th>代码</th><th>名称</th><th>状态</th><th>数量</th><th>标记价</th><th>市值</th><th>浮动盈亏</th><th>净盈亏</th></tr></thead>
-      <tbody>${accounts.length ? accounts.map(row => `<tr><td>${esc(row.code)}</td><td>${esc(row.name)}</td><td>${esc(row.status)}</td>
+      <tbody>${accounts.length ? accounts.map(row => `<tr><td>${stockLink(row.code, row.code, 'paper-stock-link')}</td><td>${stockLink(row.code, row.name, 'paper-stock-link')}</td><td>${esc(row.status)}</td>
       <td>${num(row.quantity)}</td><td>${num(row.mark_price, 3)}</td><td>${cny(row.market_value)}</td>
       <td class="${tone(row.unrealized_pnl)}">${cny(row.unrealized_pnl)}</td><td class="${tone(row.net_pnl)}">${cny(row.net_pnl)}</td></tr>`).join('') : emptyRow(8, '当前无持仓或异常账户')}</tbody>`;
     const fills = PAPER?.recent_fills || [];
     $('#paper-fills').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>方向</th><th>价格</th><th>数量</th><th>盈亏</th></tr></thead>
-      <tbody>${fills.length ? fills.map(row => `<tr><td>${dt(row.quote_at)}</td><td>${esc(row.code)} ${esc(row.name)}</td>
+      <tbody>${fills.length ? fills.map(row => `<tr><td>${dt(row.quote_at)}</td><td>${stockLink(row.code, `${row.code} ${row.name || ''}`.trim(), 'paper-stock-link')}</td>
       <td class="${row.side === 'buy' ? 'up' : 'down'}">${row.side === 'buy' ? '买入' : '卖出'}</td><td>${num(row.price, 3)}</td><td>${num(row.quantity)}</td>
       <td class="${tone(row.pnl)}">${cny(row.pnl)}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
     const signals = PAPER?.recent_signals || [];
     $('#paper-signals').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>信号</th><th>状态</th><th>原因</th></tr></thead>
-      <tbody>${signals.length ? signals.map(row => `<tr><td>${dt(row.observed_at)}</td><td>${esc(row.code)}</td>
+      <tbody>${signals.length ? signals.map(row => `<tr><td>${dt(row.observed_at)}</td><td>${stockLink(row.code, `${row.code} ${row.name || ''}`.trim(), 'paper-stock-link')}</td>
       <td class="${row.direction === 'LONG' ? 'up' : 'down'}">${signalLabel(row.direction, row.strength)}</td>
       <td>${esc(row.status)}</td><td>${esc(row.reason)}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
+    document.querySelectorAll('.paper-stock-link').forEach(button => {
+      button.addEventListener(
+        'click', () => openStock(button.dataset.code));
+    });
   }
 
   function renderResearch() {
@@ -1532,7 +1749,7 @@
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
       ['触发价格口径', DATA.intraday_replay?.price_contract],
-      ['个股图表', `前复权日K + ${num(DATA.chart_assets?.minute_day_count)} 个交易日5分钟分时`],
+      ['个股图表', `前复权日K + 腾讯最近5日1分钟价量（实时快照/历史5分钟兜底）`],
     ];
     $('#contract-list').innerHTML = items.map(([label, value]) =>
       `<div class="definition"><span>${esc(label)}</span><strong>${esc(value || '—')}</strong></div>`).join('');
@@ -1580,6 +1797,11 @@
       'click', () => moveCandidateDate(-1));
     $('#candidate-next').addEventListener(
       'click', () => moveCandidateDate(1));
+    document.querySelectorAll('[data-candidate-scope]').forEach(button =>
+      button.addEventListener('click', () => {
+        candidateScope = button.dataset.candidateScope;
+        renderCandidateDate($('#candidate-date').value);
+      }));
     $('#stock-daily-tab').addEventListener(
       'click', () => setStockMarketView('daily'));
     $('#stock-minute-tab').addEventListener(
