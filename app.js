@@ -201,7 +201,9 @@
     $('#candidate-prev').disabled = index <= 0;
     $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
     $('#candidate-date-status').textContent = day
-      ? `${day.date} · 交易日样本`
+      ? `${day.date} · ${day.mode === 'live_shadow'
+        ? `盘中实时影子 · 更新 ${dt(day.updated_at)}`
+        : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
     const evaluation = day?.evaluation || {};
@@ -213,7 +215,9 @@
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
         '同一5分钟横向比较'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
-        `未成交 ${num(evaluation.unfilled_count || 0)} · 截尾 ${num(evaluation.censored_count || 0)}`),
+        day?.mode === 'live_shadow'
+          ? '盘中名单尚无事后收益'
+          : `未成交 ${num(evaluation.unfilled_count || 0)} · 截尾 ${num(evaluation.censored_count || 0)}`),
       kpi('最终收益≥10%', `${num(evaluation.return_winner_count || 0)} 只`,
         '仅作事后验证'),
       kpi('最大浮盈≥20%', `${num(evaluation.mfe_winner_count || 0)} 只`,
@@ -225,6 +229,7 @@
       complete: '验证完成',
       unfilled: '下一周期未成交',
       censored: '后续样本不足',
+      live_pending: '盘中观察',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
       <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>画像分</th>
