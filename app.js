@@ -10,6 +10,7 @@
   const stockDetailCache = new Map();
   const stockDailyCache = new Map();
   const stockMinuteCache = new Map();
+  const stockLiveCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
   const signalColors = {
     strongLong: '#ef6666',
@@ -395,16 +396,7 @@
       ) {
         throw new Error('日K数据不完整');
       }
-      let live = null;
-      if (!staticHost) {
-        try {
-          live = await loadFirst([
-            `/api/live-stock?code=${encodeURIComponent(code)}`,
-          ]);
-        } catch (_error) {
-          live = null;
-        }
-      }
+      const live = await loadStockLive(code);
       if (live?.days?.length) {
         const bars = value.bars.slice();
         const liveSignals = [];
@@ -413,7 +405,13 @@
           const prices = day.points.map(point => Number(point[1]));
           const volume = day.points.reduce(
             (total, point) => total + Number(point[2] || 0), 0);
-          const row = [
+          const exact = live.daily_bar?.date === day.date
+            ? live.daily_bar : null;
+          const row = exact ? [
+            day.date, Number(exact.open), Number(exact.high),
+            Number(exact.low), Number(exact.close),
+            Number(exact.volume),
+          ] : [
             day.date, prices[0], Math.max(...prices),
             Math.min(...prices), prices.at(-1), volume,
           ];
@@ -435,6 +433,30 @@
       stockDailyCache.set(code, value);
     }
     return stockDailyCache.get(code);
+  }
+
+  async function loadStockLive(code) {
+    if (!stockLiveCache.has(code)) {
+      try {
+        const value = await loadFirst(staticHost ? [
+          `live/${code.slice(0, 2)}/${code}.json`,
+        ] : [
+          `/api/live-stock?code=${encodeURIComponent(code)}`,
+          `live/${code.slice(0, 2)}/${code}.json`,
+        ]);
+        if (
+          value.schema !== 'awakening-trend-live-stock-v1'
+          || value.code !== code
+          || !Array.isArray(value.days)
+        ) {
+          throw new Error('实时行情数据不完整');
+        }
+        stockLiveCache.set(code, value);
+      } catch (_error) {
+        stockLiveCache.set(code, null);
+      }
+    }
+    return stockLiveCache.get(code);
   }
 
   async function loadStockMinutes(code) {
@@ -499,11 +521,9 @@
           legacy ? '5分钟' : '5分钟',
         ];
       });
-      if (!staticHost) {
+      const live = await loadStockLive(code);
+      if (live) {
         try {
-          const live = await loadFirst([
-            `/api/live-stock?code=${encodeURIComponent(code)}`,
-          ]);
           for (const day of live.days || []) {
             const normalized = [
               day.date, Number(day.previous_close),
@@ -777,6 +797,11 @@
     });
     instance?.off('click');
     instance?.on('click', params => {
+      if (
+        params.componentType !== 'series'
+        || params.seriesType !== 'candlestick'
+        || params.seriesName !== '日K'
+      ) return;
       const day = dates[params.dataIndex];
       if (!day) return;
       state.date = day;
@@ -894,7 +919,7 @@
     const legend = ['价格'];
     if (hasAverage) legend.push('当日均价');
     if (hasVolume) legend.push('成交量');
-    chart('stock-detail-chart', {
+    const instance = chart('stock-detail-chart', {
       animation: false,
       legend: {
         top: 2, right: 12,
@@ -905,18 +930,28 @@
         trigger: 'axis', confine: true,
         formatter: items => {
           const price = items.find(item => item.seriesName === '价格');
-          if (!price) return '暂无数据';
+          const volume = items.find(
+            item => item.seriesName === '成交量');
+          const dataIndex = price?.dataIndex ?? volume?.dataIndex;
+          if (dataIndex == null) return '';
+          const currentPrice = price
+            ? Number(price.value) : prices[dataIndex];
           const change = (
-            Number(price.value) / previousClose - 1
+            currentPrice / previousClose - 1
           ) * 100;
           const averages = items
             .filter(item => item.seriesName === '当日均价')
             .map(item =>
               `${item.seriesName} ${num(item.value, 2)}`)
             .join('　');
-          return `${date} ${price.axisValue}<br>价格 ${num(price.value, 2)}`
+          const time = price?.axisValue
+            || volume?.axisValue || times[dataIndex];
+          return `${date} ${time}<br>价格 ${num(currentPrice, 2)}`
             + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
-            + (averages ? `<br>${averages}` : '');
+            + (averages ? `<br>${averages}` : '')
+            + (volume
+              ? `<br>分钟成交量 ${num(volumes[dataIndex])} 股`
+              : '');
         },
       },
       grid: hasVolume ? [
@@ -1002,6 +1037,7 @@
         }] : []),
       ],
     });
+    instance?.off('click');
     const labels = marks.map(mark => {
       return `${clock(mark[0])} ${signalLabel(mark[1], mark[2])}`;
     });
