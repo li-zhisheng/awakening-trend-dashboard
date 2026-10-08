@@ -518,7 +518,7 @@
         return [
           date, previousClose, points, marks || [],
           'BaoStock 历史5分钟价量数据',
-          legacy ? '5分钟' : '5分钟',
+          legacy ? '5分钟' : '5分钟', null,
         ];
       });
       const live = await loadStockLive(code);
@@ -530,6 +530,7 @@
               day.points || [], day.marks || [],
               day.source || '腾讯/新浪批量实时快照',
               day.frequency || '约1分钟真实快照',
+              day.auction || null,
             ];
             const index = days.findIndex(item => item[0] === day.date);
             if (index >= 0) days[index] = normalized;
@@ -824,16 +825,40 @@
       charts.get('stock-detail-chart')?.clear();
       return;
     }
-    const [date, previousClose, points, rawMarks, source, frequency] = day;
+    const [
+      date, previousClose, minutePoints, rawMarks,
+      source, frequency, auction,
+    ] = day;
+    const auctionPoints = (auction?.points || [])
+      .filter(point =>
+        Number.isFinite(Number(point.qfq_price))
+        && Number(point.qfq_price) > 0)
+      .map(point => {
+        const match = String(point.quote_at || '').match(
+          /T(\d{2}):(\d{2}):(\d{2})/);
+        return [
+          match ? `${match[1]}${match[2]}${match[3]}` : '',
+          Number(point.qfq_price), 0, null, null, true,
+          Number(point.matched_amount_cny || 0),
+        ];
+      }).filter(point => point[0]);
+    const auctionCount = auctionPoints.length;
+    const points = [...auctionPoints, ...minutePoints];
     const times = points.map(point =>
-      `${point[0].slice(0, 2)}:${point[0].slice(2)}`);
+      `${point[0].slice(0, 2)}:${point[0].slice(2, 4)}`
+      + (point[0].length > 4 ? `:${point[0].slice(4, 6)}` : ''));
     const prices = points.map(point => Number(point[1]));
+    const regularPrices = points.map((point, index) =>
+      index < auctionCount ? null : Number(point[1]));
+    const auctionPrices = points.map((point, index) =>
+      index < auctionCount ? Number(point[1]) : null);
     const volumes = points.map(point => Number(point[2]));
     const amounts = points.map(point =>
       point[3] == null ? null : Number(point[3]));
     let cumulativeVolume = 0;
     let cumulativeAmount = 0;
     const averagePrices = points.map((point, index) => {
+      if (index < auctionCount) return null;
       if (point[4] != null && Number.isFinite(Number(point[4]))) {
         return Number(point[4]);
       }
@@ -917,6 +942,7 @@
       index === 0 || index === times.length - 1
       || ['10:30', '11:30', '14:00', '15:00'].includes(value);
     const legend = ['价格'];
+    if (auctionCount) legend.push('竞价走势');
     if (hasAverage) legend.push('当日均价');
     if (hasVolume) legend.push('成交量');
     const instance = chart('stock-detail-chart', {
@@ -930,12 +956,16 @@
         trigger: 'axis', confine: true,
         formatter: items => {
           const price = items.find(item => item.seriesName === '价格');
+          const auctionPrice = items.find(
+            item => item.seriesName === '竞价走势');
           const volume = items.find(
             item => item.seriesName === '成交量');
-          const dataIndex = price?.dataIndex ?? volume?.dataIndex;
+          const dataIndex = price?.dataIndex
+            ?? auctionPrice?.dataIndex ?? volume?.dataIndex;
           if (dataIndex == null) return '';
-          const currentPrice = price
-            ? Number(price.value) : prices[dataIndex];
+          const currentPrice = Number(
+            price?.value ?? auctionPrice?.value
+            ?? prices[dataIndex]);
           const change = (
             currentPrice / previousClose - 1
           ) * 100;
@@ -949,7 +979,11 @@
           return `${date} ${time}<br>价格 ${num(currentPrice, 2)}`
             + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
             + (averages ? `<br>${averages}` : '')
+            + (points[dataIndex]?.[5]
+              ? `<br>竞价匹配额 ${cny(points[dataIndex][6])}`
+              : '')
             + (volume
+              && dataIndex >= auctionCount
               ? `<br>分钟成交量 ${num(volumes[dataIndex])} 股`
               : '');
         },
@@ -999,7 +1033,7 @@
       ],
       series: [
         {
-          name: '价格', type: 'line', data: prices,
+          name: '价格', type: 'line', data: regularPrices,
           showSymbol: false, connectNulls: false,
           lineStyle: { width: 2, color: '#78a8e8' },
           itemStyle: { color: '#78a8e8' },
@@ -1017,6 +1051,14 @@
             data: [{ yAxis: Number(previousClose) }],
           },
         },
+        ...(auctionCount ? [{
+          name: '竞价走势', type: 'line', data: auctionPrices,
+          showSymbol: true, symbolSize: 7, connectNulls: false,
+          lineStyle: {
+            width: 1.8, type: 'dashed', color: '#e5b94f',
+          },
+          itemStyle: { color: '#e5b94f' },
+        }] : []),
         ...(hasAverage ? [{
           name: '当日均价', type: 'line', data: averagePrices,
           showSymbol: false, connectNulls: false,
@@ -1043,6 +1085,11 @@
     });
     $('#stock-market-status').textContent =
       `${date} 前复权${frequency || '分时'} · ${source || '历史行情'} · 昨收 ${num(previousClose, 3)}`
+      + (auctionCount
+        ? ` · 竞价 ${auctionCount} 点`
+        : auction?.status === 'not_in_watch_pool'
+          ? ' · 未纳入竞价观察池'
+          : '')
       + (labels.length ? ` · ${labels.join(' · ')}` : '');
   }
 
