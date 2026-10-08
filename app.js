@@ -210,15 +210,18 @@
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
     const evaluation = day?.evaluation || {};
+    const dynamicEntry = day?.entry_model?.mode === 'dynamic_shadow_only';
     $('#candidate-kpis').innerHTML = [
       kpi(
         day?.mode === 'live_shadow'
           && day.opportunity_model_applied === false
           ? '旧口径复盘'
-          : '高机会观察',
+          : dynamicEntry ? '动态入场观察' : '高机会观察',
         `${num(day?.candidate_count || 0)} 只`,
-        day?.eligible_candidate_count != null
-          ? `可买 ${num(day?.eligible_candidate_count || 0)} · 高位观察 ${num(day?.high_return_rejected_count || 0)}`
+        dynamicEntry
+          ? `影子就绪 ${num(day?.ready_candidate_count || 0)} · 等回落 ${num(day?.wait_pullback_count || 0)}`
+          : day?.eligible_candidate_count != null
+          ? `旧门槛可买 ${num(day?.eligible_candidate_count || 0)} · 高位观察 ${num(day?.high_return_rejected_count || 0)}`
           : `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
@@ -248,12 +251,22 @@
       censored: '后续样本不足',
       live_pending: '机会达标，可买观察',
       live_rejected_high: '机会达标，首点>5%不可买',
+      live_immediate_watch: '持续观察',
+      live_wait_pullback: '等待回落',
+      live_ready_shadow: '回落/走势企稳，仅影子就绪',
+      live_invalidated: '当前失效',
       live_legacy_review: '旧口径复盘，不作为新规则买入',
+    };
+    const entryPlanLabel = {
+      stabilize_then_rank: '观察企稳后排序',
+      pullback_then_stabilize: '等待回落企稳',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
       <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>机会风险分</th>
       <th>+10%先于-5%</th><th>最大浮盈≥20%</th><th>最大浮亏≥5%</th>
-      <th>信号时涨幅</th><th>验证状态</th><th>最终收益</th>
+      <th>信号时涨幅</th><th>板块分</th><th>相对板块</th><th>资金确认</th>
+      <th>当前涨幅</th><th>峰值回撤</th><th>企稳分钟</th><th>动态入场计划</th>
+      <th>验证状态</th><th>最终收益</th>
       <th>最大浮盈</th><th>最大浮亏</th>
     </tr></thead><tbody>${rows.length ? rows.map(item => {
       const selection = item.selection;
@@ -268,8 +281,12 @@
       const outcomeStatus = statusLabel[outcome.status] || outcome.status;
       const displayStatus = (
         selection.entry_eligible === false
+        && !selection.entry_status
         && !String(outcome.status || '').startsWith('live_')
       ) ? `首点>5%不可买 · ${outcomeStatus}` : outcomeStatus;
+      const entryPlan = entryPlanLabel[selection.entry_plan] || '—';
+      const statusAt = selection.entry_status_at
+        ? dt(selection.entry_status_at).split(' ')[1] : '';
       return `<tr><td>${esc(signalTime)}${signalPrice}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
@@ -283,11 +300,18 @@
         <td>${selection.max_floating_loss_5_probability == null
           ? '—' : pct(selection.max_floating_loss_5_probability, 0)}</td>
         <td class="${tone(selection.intraday_return)}">${pct(selection.intraday_return)}</td>
+        <td>${selection.industry_score == null ? '—' : pct(selection.industry_score, 0)}</td>
+        <td class="${tone(selection.stock_return_vs_industry)}">${selection.stock_return_vs_industry == null ? '—' : pct(selection.stock_return_vs_industry)}</td>
+        <td>${selection.capital_confirmation_score == null ? '—' : pct(selection.capital_confirmation_score, 0)}</td>
+        <td class="${tone(selection.current_return)}">${selection.current_return == null ? '—' : pct(selection.current_return)}</td>
+        <td class="${tone(selection.pullback_from_peak == null ? null : -selection.pullback_from_peak)}">${selection.pullback_from_peak == null ? '—' : pct(-selection.pullback_from_peak)}</td>
+        <td>${selection.stable_observations == null ? '—' : num(selection.stable_observations)}</td>
+        <td>${esc(entryPlan)}${statusAt ? `<br><small>${esc(statusAt)}</small>` : ''}</td>
         <td>${esc(displayStatus)}</td>
         <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
-    }).join('') : emptyRow(14, day ? '当日没有股票达到机会风险阈值' : '该日期没有交易日样本')}</tbody>`;
+    }).join('') : emptyRow(21, day ? '当日没有股票达到机会风险阈值' : '该日期没有交易日样本')}</tbody>`;
     document.querySelectorAll('.candidate-stock-link').forEach(button => {
       button.addEventListener('click', () => openStock(button.dataset.code));
     });

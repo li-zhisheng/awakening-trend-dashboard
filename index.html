@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261008-opportunity-risk-v1">
+  <link rel="stylesheet" href="styles.css?v=20261008-dynamic-entry-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261008-opportunity-risk-v1" defer></script>
+  <script src="app.js?v=20261008-dynamic-entry-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -84,7 +84,7 @@
         <div class="panel-head">
           <div>
             <h2>最大浮盈机会风险观察</h2>
-            <p>最大浮盈机会优先，最大浮亏概率扣分；每日最多2只，买入资格单独判断</p>
+            <p>机会风险、板块共振、个股相对强度与分钟价格路径联合观察；每日重点显示2只</p>
           </div>
           <span id="candidate-hash" class="hash-label">--</span>
         </div>
@@ -94,7 +94,7 @@
       </section>
       <section class="panel warning-panel">
         <h2>验证边界</h2>
-        <p>观察池识别后续最大浮盈机会，不代表可买。首点涨幅超过5%的股票只留作机会验证；可买账户仅统计通过入场门槛的候选，正式策略使用不同信号池与入场契约。</p>
+        <p>动态入场状态只作前瞻影子验证，不控制交易。高位信号等待回落企稳，水下信号保留观察；板块与相对强度参与连续排序，不作为单一硬门槛。历史简单回撤和简单板块阈值均未稳定通过样本外验证。</p>
       </section>
     </section>
 

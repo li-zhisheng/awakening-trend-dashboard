@@ -92,6 +92,7 @@ table{width:100%;border-collapse:collapse;min-width:720px}
 th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
 th{position:sticky;top:0;background:#20292e;color:#aebbc0;font-size:12px;z-index:1}
 th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+td small{color:var(--muted)}
 tbody tr:hover{background:#1b252a}
 tbody tr:last-child td{border-bottom:0}
 .toolbar{
