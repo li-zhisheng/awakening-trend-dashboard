@@ -19,19 +19,6 @@
     strongShort: '#3fc28b',
     weakShort: '#3fc28b',
   };
-  const minuteClocks = [
-    ...Array.from({ length: 24 }, (_, index) => {
-      const total = 9 * 60 + 35 + index * 5;
-      return `${String(Math.floor(total / 60)).padStart(2, '0')}${String(total % 60).padStart(2, '0')}`;
-    }),
-    ...Array.from({ length: 24 }, (_, index) => {
-      const total = 13 * 60 + index * 5;
-      return index === 23
-        ? '1500'
-        : `${String(Math.floor(total / 60)).padStart(2, '0')}${String(total % 60).padStart(2, '0')}`;
-    }),
-  ];
-
   const $ = (selector) => document.querySelector(selector);
   const dataPaths = (api, file) => staticHost ? [file] : [api, file];
   const esc = (value) => String(value ?? '')
@@ -734,72 +721,7 @@
 
   async function loadStockMinutes(code, daily) {
     if (!stockMinuteCache.has(code)) {
-      let value = null;
-      let days = [];
-      try {
-        value = await loadFirst([
-          `minutes/${code.slice(0, 2)}/${code}.json`,
-        ]);
-        if (![
-          'awakening-trend-all-day-minutes-v2',
-          'awakening-trend-all-day-minutes-v3',
-          'awakening-trend-all-day-minutes-v4',
-        ].includes(value.schema) || value.code !== code
-          || !Array.isArray(value.days)) {
-          throw new Error('分时数据不完整');
-        }
-        days = value.days.map(day => {
-          const legacy = value.schema.endsWith('-v2');
-          const [date, previousClose] = day;
-          const clocks = minuteClocks;
-          const deltas = day[2];
-          const volumes = day[3];
-          const averageDeltas = legacy ? null : day[5];
-          const marks = day[4];
-          if (
-            !Array.isArray(deltas)
-            || !Array.isArray(volumes)
-            || deltas.length !== clocks.length
-            || volumes.length !== clocks.length
-            || (
-              averageDeltas != null
-              && (
-                !Array.isArray(averageDeltas)
-                || averageDeltas.length !== clocks.length
-              )
-            )
-          ) {
-            throw new Error(`分时数据不完整: ${date}`);
-          }
-          let scaledPrice = 0;
-          let scaledAverage = 0;
-          const points = deltas.map((delta, index) => {
-            scaledPrice = index === 0
-              ? Number(delta)
-              : scaledPrice + Number(delta);
-            if (averageDeltas) {
-              scaledAverage = index === 0
-                ? Number(averageDeltas[index])
-                : scaledAverage + Number(averageDeltas[index]);
-            }
-            return [
-              clocks[index],
-              scaledPrice / 10000,
-              Number(volumes[index]),
-              null,
-              averageDeltas ? scaledAverage / 10000 : null,
-            ];
-          });
-          return [
-            date, previousClose, points, marks || [],
-            'BaoStock 历史5分钟价量数据',
-            '5分钟', null,
-          ];
-        });
-      } catch (_error) {
-        value = null;
-        days = [];
-      }
+      const days = [];
       const live = await loadStockLive(code);
       if (live) {
         try {
@@ -817,7 +739,7 @@
           }
           days.sort((left, right) => left[0].localeCompare(right[0]));
         } catch (_error) {
-          // Historical data remains available when the live store is empty.
+          // Tencent/Sina persisted snapshots remain optional.
         }
       }
       try {
@@ -831,13 +753,12 @@
         }
         days.sort((left, right) => left[0].localeCompare(right[0]));
       } catch (_error) {
-        // Persisted one-minute evidence and BaoStock history remain available.
+        // Persisted Tencent/Sina one-minute evidence remains available.
       }
       if (!days.length) throw new Error('分时数据暂不可用');
       stockMinuteCache.set(code, {
-        ...(value || {}),
         code,
-        schema: value?.schema || 'awakening-trend-online-minutes-v1',
+        schema: 'awakening-trend-online-minutes-v1',
         days,
       });
     }
@@ -1119,7 +1040,7 @@
     const day = state?.minuteByDate.get(state.date);
     if (!state || !day) {
       $('#stock-market-status').textContent =
-        '该交易日没有可用的历史分时';
+        '该交易日没有腾讯/新浪1分钟数据';
       charts.get('stock-detail-chart')?.clear();
       return;
     }
@@ -1431,20 +1352,22 @@
       state.minuteByDate = new Map(
         minute.days.map(day => [day[0], day]));
       const dates = [...state.minuteByDate.keys()].sort();
-      state.date = state.date || dates.at(-1) || '';
+      if (!state.minuteByDate.has(state.date)) {
+        state.date = dates.at(-1) || '';
+      }
       $('#stock-minute-date').innerHTML = dates.map(day =>
         `<option value="${esc(day)}">${esc(day)}</option>`).join('');
       $('#stock-minute-date').value = state.date;
       syncStockMinuteNavigation();
       if (!dates.length) {
         $('#stock-market-status').textContent =
-          '该股票没有可用的历史分时';
+          '该股票没有腾讯/新浪1分钟数据';
       }
       return Boolean(dates.length);
     } catch (_error) {
       if (stockMarketState === state) {
         $('#stock-market-status').textContent =
-          '该股票没有可用的历史分时';
+          '该股票没有腾讯/新浪1分钟数据';
       }
       return false;
     } finally {
@@ -1468,7 +1391,7 @@
     } else {
       if (!state.minute) {
         $('#stock-market-status').textContent =
-          '正在读取历史分时';
+          '正在读取腾讯/新浪1分钟行情';
       }
       if (!(state.minute || await ensureStockMinutes(state))) return;
       if (stockMarketState !== state || state.view !== 'minute') return;
@@ -1521,7 +1444,7 @@
     } catch (_error) {
       if (stockMarketState !== state) return;
       $('#stock-market-status').textContent =
-        '日K数据不可用；可尝试查看历史分时';
+        '日K数据不可用；可尝试查看腾讯/新浪1分钟行情';
       return;
     }
     if (stockMarketState === state) setStockMarketView('daily');
@@ -1749,7 +1672,7 @@
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
       ['触发价格口径', DATA.intraday_replay?.price_contract],
-      ['个股图表', `前复权日K + 腾讯最近5日1分钟价量（实时快照/历史5分钟兜底）`],
+      ['个股图表', '前复权日K + 腾讯最近5日1分钟价量（腾讯/新浪分钟快照兜底）'],
     ];
     $('#contract-list').innerHTML = items.map(([label, value]) =>
       `<div class="definition"><span>${esc(label)}</span><strong>${esc(value || '—')}</strong></div>`).join('');
