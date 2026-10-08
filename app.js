@@ -211,9 +211,14 @@
 
     const evaluation = day?.evaluation || {};
     $('#candidate-kpis').innerHTML = [
-      kpi('当日待定票', `${num(day?.candidate_count || 0)} 只`,
+      kpi(
         day?.mode === 'live_shadow'
-          ? `可买 ${num(day?.eligible_candidate_count || 0)} · 高位排除 ${num(day?.high_return_rejected_count || 0)}`
+          && day.opportunity_model_applied === false
+          ? '旧口径复盘'
+          : '高机会观察',
+        `${num(day?.candidate_count || 0)} 只`,
+        day?.eligible_candidate_count != null
+          ? `可买 ${num(day?.eligible_candidate_count || 0)} · 高位观察 ${num(day?.high_return_rejected_count || 0)}`
           : `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
@@ -241,12 +246,13 @@
       complete: '验证完成',
       unfilled: '下一周期未成交',
       censored: '后续样本不足',
-      live_pending: '盘中观察',
-      live_rejected_high: '首点涨幅>5%，不宜买入',
+      live_pending: '机会达标，可买观察',
+      live_rejected_high: '机会达标，首点>5%不可买',
+      live_legacy_review: '旧口径复盘，不作为新规则买入',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>画像分</th>
-      <th>5日波动排名</th><th>20日波动排名</th><th>位置压力排名</th>
+      <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>机会风险分</th>
+      <th>+10%先于-5%</th><th>最大浮盈≥20%</th><th>最大浮亏≥5%</th>
       <th>信号时涨幅</th><th>验证状态</th><th>最终收益</th>
       <th>最大浮盈</th><th>最大浮亏</th>
     </tr></thead><tbody>${rows.length ? rows.map(item => {
@@ -259,21 +265,29 @@
         selection.live_shadow
         && Number.isFinite(Number(selection.signal_price))
       ) ? `<br><small>¥${num(selection.signal_price, 2)}</small>` : '';
+      const outcomeStatus = statusLabel[outcome.status] || outcome.status;
+      const displayStatus = (
+        selection.entry_eligible === false
+        && !String(outcome.status || '').startsWith('live_')
+      ) ? `首点>5%不可买 · ${outcomeStatus}` : outcomeStatus;
       return `<tr><td>${esc(signalTime)}${signalPrice}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
         <td>${esc(selection.industry || '—')}</td>
         <td class="up">${signalLabel(1, selection.strength)}</td>
-        <td>${num(selection.score, 3)}</td>
-        <td>${pct(selection.volatility_5_rank, 0)}</td>
-        <td>${pct(selection.volatility_20_rank, 0)}</td>
-        <td>${pct(selection.location_pressure_rank, 0)}</td>
+        <td>${selection.score == null ? '—' : num(selection.score, 3)}</td>
+        <td>${selection.profit_10_before_loss_5_probability == null
+          ? '—' : pct(selection.profit_10_before_loss_5_probability, 0)}</td>
+        <td>${selection.max_floating_profit_20_probability == null
+          ? '—' : pct(selection.max_floating_profit_20_probability, 0)}</td>
+        <td>${selection.max_floating_loss_5_probability == null
+          ? '—' : pct(selection.max_floating_loss_5_probability, 0)}</td>
         <td class="${tone(selection.intraday_return)}">${pct(selection.intraday_return)}</td>
-        <td>${esc(statusLabel[outcome.status] || outcome.status)}</td>
+        <td>${esc(displayStatus)}</td>
         <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
-    }).join('') : emptyRow(13, day ? '当日没有股票通过高质量启动规则' : '该日期没有交易日样本')}</tbody>`;
+    }).join('') : emptyRow(14, day ? '当日没有股票达到机会风险阈值' : '该日期没有交易日样本')}</tbody>`;
     document.querySelectorAll('.candidate-stock-link').forEach(button => {
       button.addEventListener('click', () => openStock(button.dataset.code));
     });
@@ -284,15 +298,18 @@
     const summary = payload.summary || {};
     const accounts = DATA.candidate_account_comparison || {};
     const baseline = accounts.baseline_early_raw || {};
-    const candidate = accounts.high_quality_candidates || {};
-    const strongCandidate = accounts.high_quality_strong_only || {};
+    const opportunity = accounts.opportunity_observation || {};
+    const candidate =
+      accounts.buyable_candidates || accounts.high_quality_candidates || {};
+    const strongCandidate =
+      accounts.buyable_strong_only
+      || accounts.high_quality_strong_only || {};
     const allStrengthCandidate =
-      accounts.high_quality_strong_plus_weak || candidate;
+      accounts.buyable_candidates
+      || accounts.high_quality_strong_plus_weak || candidate;
     const weakContribution = accounts.weak_long_contribution || {};
     const delta = accounts.delta || {};
     const formal = accounts.formal_all_signal_reference || {};
-    const formalWeakDelta =
-      DATA.weak_signal_comparison?.delta?.annual_return;
     const days = candidateDays();
     const input = $('#candidate-date');
     if (days.length) {
@@ -315,9 +332,9 @@
     $('#candidate-account-delta').className =
       tone(delta.annual_return);
     $('#candidate-formal-reference').textContent =
-      `${pct(formal.annual_return)} · 不同口径`;
+      `${pct(opportunity.annual_return)} · 不控制买入`;
     $('#candidate-formal-reference').className =
-      tone(formal.annual_return);
+      tone(opportunity.annual_return);
     $('#candidate-strong-return').textContent =
       pct(strongCandidate.annual_return, 4);
     $('#candidate-strong-return').className =
@@ -331,9 +348,9 @@
     $('#candidate-weak-delta').className =
       tone(weakContribution.annual_return);
     $('#candidate-formal-weak-delta').textContent =
-      pct(formalWeakDelta);
+      `${pct(formal.annual_return)} · 不同口径`;
     $('#candidate-formal-weak-delta').className =
-      tone(formalWeakDelta);
+      tone(formal.annual_return);
     renderCandidateDate(days.at(-1)?.date || '');
   }
 
@@ -1324,12 +1341,23 @@
     const capitalUnion = commonRules.current_or_capital_confirmed || {};
     const announcements = research.winner_announcements || {};
     const announcementStable = announcements.status === 'stable_increment';
+    const opportunity = research.opportunity_risk || {};
+    const opportunityHeldout =
+      opportunity.results?.heldout?.selected || {};
+    const opportunityBase =
+      opportunity.results?.heldout?.all_candidates || {};
     const validation = DATA.paper_validation || {};
     $('#research-kpis').innerHTML = [
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
       kpi('提前空点胜率', pct(early.early_trade_win_rate), `原空点 ${pct(early.base_trade_win_rate)}`),
       kpi('赢家画像大涨股', num(staged.return_winner_count), `V2 ${num(compare.return_winner_count)}`),
       kpi('最大浮盈赢家', num(staged.mfe_winner_count), `V2 ${num(compare.mfe_winner_count)}`),
+      kpi('机会风险倍数',
+        num(opportunityHeldout.opportunity_risk_multiple, 2),
+        `7-8月全多头 ${num(opportunityBase.opportunity_risk_multiple, 2)}`),
+      kpi('高机会可买样本',
+        num(opportunityHeldout.entry_eligible_count),
+        '机会识别与买入资格分离'),
       kpi('全量收益赢家', num(commonality.sample?.return_winners), `${num(commonality.sample?.events)} 条可成交样本`),
       kpi('板块补充召回', pct(capitalUnion.return_winner_recall), `原规则 ${pct(currentRule.return_winner_recall)}`),
       kpi('下一开盘代理收益', pct(entry.next_bar_open_price?.mean_daily_return), '全样本每日 Top5'),
@@ -1440,9 +1468,9 @@
       ['推荐历史入场代理', contracts.recommended_history_entry],
       ['实时成交', contracts.live_entry],
       ['真实交易控制', contracts.live_controls_trading ? '已启用' : '未启用，只读模拟'],
-      ['每日待定票', DATA.daily_candidates?.contract?.selection],
-      ['待定票信号分类', DATA.daily_candidates?.contract?.signal_strength],
-      ['待定票未来收益参与', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
+      ['机会观察池', DATA.daily_candidates?.contract?.selection],
+      ['观察池信号分类', DATA.daily_candidates?.contract?.signal_strength],
+      ['未来收益参与选择', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
       ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
       ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
       ['跌信号退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
@@ -1463,8 +1491,10 @@
       winner_profile: '赢家画像', winner_commonality: '大涨股共性',
       winner_announcements: '官方公告增量',
       winner_onset: '首次多头',
-      entry_price: '入场价格', winner_shadow: '即时影子',
-      daily_candidates: '每日待定票',
+      entry_price: '入场价格',
+      opportunity_risk: '机会风险研究',
+      winner_shadow: '即时影子',
+      daily_candidates: '机会观察池',
       candidate_accounts: '候选账户对照',
       chart_manifest: '个股图表资源',
     };

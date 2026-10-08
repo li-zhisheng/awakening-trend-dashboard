@@ -28,7 +28,7 @@
 
   <nav class="view-tabs" aria-label="多空指标数据视图">
     <button class="active" data-view="overview" type="button">总览</button>
-    <button data-view="candidates" type="button">每日待定票</button>
+    <button data-view="candidates" type="button">机会观察</button>
     <button data-view="stocks" type="button">个股回测</button>
     <button data-view="paper" type="button">实盘模拟</button>
     <button data-view="research" type="button">信号研究</button>
@@ -70,21 +70,21 @@
       <div id="candidate-kpis" class="kpi-grid"></div>
       <section class="status-band candidate-summary">
         <div><span>早盘全量账户</span><strong id="candidate-account-baseline">--</strong></div>
-        <div><span>候选筛选账户</span><strong id="candidate-account-return">--</strong></div>
+        <div><span>可买候选账户</span><strong id="candidate-account-return">--</strong></div>
         <div><span>同口径改善</span><strong id="candidate-account-delta">--</strong></div>
-        <div><span>全天正式策略参考</span><strong id="candidate-formal-reference">--</strong></div>
+        <div><span>高机会观察账户</span><strong id="candidate-formal-reference">--</strong></div>
       </section>
       <section class="status-band candidate-strength-summary">
         <div><span>仅多候选</span><strong id="candidate-strong-return">--</strong></div>
         <div><span>多+涨候选</span><strong id="candidate-all-strength-return">--</strong></div>
         <div><span>涨候选增量</span><strong id="candidate-weak-delta">--</strong></div>
-        <div><span>正式框架涨跌信号增量</span><strong id="candidate-formal-weak-delta">--</strong></div>
+        <div><span>全天正式策略参考</span><strong id="candidate-formal-weak-delta">--</strong></div>
       </section>
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>高质量启动待定票</h2>
-            <p>首次多头不晚于 10:00；同批 5日波动率、20日波动率和价格位置压力均在前20%</p>
+            <h2>最大浮盈机会风险观察</h2>
+            <p>最大浮盈机会优先，最大浮亏概率扣分；每日最多2只，买入资格单独判断</p>
           </div>
           <span id="candidate-hash" class="hash-label">--</span>
         </div>
@@ -94,7 +94,7 @@
       </section>
       <section class="panel warning-panel">
         <h2>验证边界</h2>
-        <p>名单已包含多、涨，并使用空、跌退出；但现有强势门槛只保留少量涨信号，弱信号增量远低于全天正式框架。正式策略使用不同信号池与入场契约，不能直接混算。</p>
+        <p>观察池识别后续最大浮盈机会，不代表可买。首点涨幅超过5%的股票只留作机会验证；可买账户仅统计通过入场门槛的候选，正式策略使用不同信号池与入场契约。</p>
       </section>
     </section>
 
