@@ -112,6 +112,33 @@
     });
   }
 
+  function minuteVolumeDirections(
+    prices, previousClose, auctionCount = 0,
+  ) {
+    let reference = Number(previousClose);
+    return prices.map((value, index) => {
+      if (index < auctionCount) return 0;
+      const current = Number(value);
+      const direction = current > reference
+        ? 1 : current < reference ? -1 : 0;
+      reference = current;
+      return direction;
+    });
+  }
+
+  function minuteVolumeLabel(direction) {
+    return direction > 0
+      ? '上涨成交量' : direction < 0 ? '下跌成交量' : '平盘成交量';
+  }
+
+  function minuteVolumeColor(direction) {
+    return direction > 0
+      ? 'rgba(239,102,102,.72)'
+      : direction < 0
+        ? 'rgba(63,194,139,.72)'
+        : 'rgba(148,163,168,.48)';
+  }
+
   function renderHeader() {
     $('#generated-at').textContent = `数据生成 ${dt(DATA.generated_at)}`;
     const health = DATA.trend_validation || DATA.paper?.health || {};
@@ -913,6 +940,8 @@
     const auctionPrices = points.map((point, index) =>
       index < auctionCount ? Number(point[1]) : null);
     const volumes = points.map(point => Number(point[2]));
+    const volumeDirections = minuteVolumeDirections(
+      prices, previousClose, auctionCount);
     const amounts = points.map(point =>
       point[3] == null ? null : Number(point[3]));
     let cumulativeVolume = 0;
@@ -1004,7 +1033,7 @@
     const legend = ['价格'];
     if (auctionCount) legend.push('竞价走势');
     if (hasAverage) legend.push('当日均价');
-    if (hasVolume) legend.push('成交量');
+    if (hasVolume) legend.push('方向成交量');
     const instance = chart('stock-detail-chart', {
       animation: false,
       legend: {
@@ -1019,7 +1048,7 @@
           const auctionPrice = items.find(
             item => item.seriesName === '竞价走势');
           const volume = items.find(
-            item => item.seriesName === '成交量');
+            item => item.seriesName === '方向成交量');
           const dataIndex = price?.dataIndex
             ?? auctionPrice?.dataIndex ?? volume?.dataIndex;
           if (dataIndex == null) return '';
@@ -1044,7 +1073,9 @@
               : '')
             + (volume
               && dataIndex >= auctionCount
-              ? `<br>分钟成交量 ${num(volumes[dataIndex])} 股`
+              ? `<br>${minuteVolumeLabel(
+                volumeDirections[dataIndex])} ${num(
+                volumes[dataIndex])} 股`
               : '');
         },
       },
@@ -1126,14 +1157,13 @@
           itemStyle: { color: '#e5b94f' },
         }] : []),
         ...(hasVolume ? [{
-          name: '成交量', type: 'bar',
+          name: '方向成交量', type: 'bar',
           xAxisIndex: 1, yAxisIndex: 1,
           data: volumes.map((value, index) => ({
             value,
             itemStyle: {
-              color: prices[index] >= previousClose
-                ? 'rgba(239,102,102,.52)'
-                : 'rgba(63,194,139,.52)',
+              color: minuteVolumeColor(
+                volumeDirections[index]),
             },
           })),
         }] : []),
