@@ -920,8 +920,8 @@
           ].filter(item => item[1] != null)
             .map(item => `${item[0]} ${num(item[1], 2)}`)
             .join('　');
-          return `${esc(row[0])}<br>开 ${num(row[1], 3)}　收 ${num(row[4], 3)}`
-            + `<br>高 ${num(row[2], 3)}　低 ${num(row[3], 3)}`
+          return `${esc(row[0])}<br>开 ${num(row[1], 2)}　收 ${num(row[4], 2)}`
+            + `<br>高 ${num(row[2], 2)}　低 ${num(row[3], 2)}`
             + (averages ? `<br>${averages}` : '')
             + `<br>成交量 ${num(row[5])}`;
         },
@@ -1024,15 +1024,13 @@
       ) return;
       const day = dates[params.dataIndex];
       if (!day) return;
-      state.date = day;
-      $('#stock-minute-date').value = day;
-      setStockMarketView('minute');
+      openStockMinuteDate(day);
     });
     const strong = marks.filter(mark =>
       mark.strength === 'strong').length;
     const weak = marks.length - strong;
     $('#stock-market-status').textContent =
-      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 多/空 ${strong} · 涨/跌 ${weak} · 点击任意K线查看当天分时`;
+      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 多/空 ${strong} · 涨/跌 ${weak} · 点击K线查看对应日期分时（仅真实1分钟留存日可用）`;
   }
 
   function renderStockMinute() {
@@ -1306,7 +1304,7 @@
       return `${clock(mark[0])} ${signalLabel(mark[1], mark[2])}`;
     });
     $('#stock-market-status').textContent =
-      `${date} 前复权${frequency || '分时'} · ${source || '历史行情'} · 昨收 ${num(previousClose, 3)}`
+      `${date} 前复权${frequency || '分时'} · ${source || '历史行情'} · 昨收 ${num(previousClose, 2)}`
       + (auctionCount
         ? ` · 竞价 ${auctionCount} 点`
         : auction?.status === 'not_in_watch_pool'
@@ -1373,6 +1371,23 @@
     } finally {
       state.minutePromise = null;
     }
+  }
+
+  async function openStockMinuteDate(date) {
+    const state = stockMarketState;
+    if (!state || !date) return;
+    $('#stock-market-status').textContent =
+      `正在核对 ${date} 的腾讯/新浪1分钟行情`;
+    if (!(state.minute || await ensureStockMinutes(state))) return;
+    if (stockMarketState !== state) return;
+    if (!state.minuteByDate.has(date)) {
+      $('#stock-market-status').textContent =
+        `${date} 没有腾讯/新浪真实1分钟数据，已保留日K`;
+      return;
+    }
+    state.date = date;
+    $('#stock-minute-date').value = date;
+    await setStockMarketView('minute');
   }
 
   async function setStockMarketView(view) {
@@ -1504,12 +1519,12 @@
       row.quantity || row.status !== 'cash' || row.net_pnl);
     $('#paper-stocks').innerHTML = `<thead><tr><th>代码</th><th>名称</th><th>状态</th><th>数量</th><th>标记价</th><th>市值</th><th>浮动盈亏</th><th>净盈亏</th></tr></thead>
       <tbody>${accounts.length ? accounts.map(row => `<tr><td>${stockLink(row.code, row.code, 'paper-stock-link')}</td><td>${stockLink(row.code, row.name, 'paper-stock-link')}</td><td>${esc(row.status)}</td>
-      <td>${num(row.quantity)}</td><td>${num(row.mark_price, 3)}</td><td>${cny(row.market_value)}</td>
+      <td>${num(row.quantity)}</td><td>${num(row.mark_price, 2)}</td><td>${cny(row.market_value)}</td>
       <td class="${tone(row.unrealized_pnl)}">${cny(row.unrealized_pnl)}</td><td class="${tone(row.net_pnl)}">${cny(row.net_pnl)}</td></tr>`).join('') : emptyRow(8, '当前无持仓或异常账户')}</tbody>`;
     const fills = PAPER?.recent_fills || [];
     $('#paper-fills').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>方向</th><th>价格</th><th>数量</th><th>盈亏</th></tr></thead>
       <tbody>${fills.length ? fills.map(row => `<tr><td>${dt(row.quote_at)}</td><td>${stockLink(row.code, `${row.code} ${row.name || ''}`.trim(), 'paper-stock-link')}</td>
-      <td class="${row.side === 'buy' ? 'up' : 'down'}">${row.side === 'buy' ? '买入' : '卖出'}</td><td>${num(row.price, 3)}</td><td>${num(row.quantity)}</td>
+      <td class="${row.side === 'buy' ? 'up' : 'down'}">${row.side === 'buy' ? '买入' : '卖出'}</td><td>${num(row.price, 2)}</td><td>${num(row.quantity)}</td>
       <td class="${tone(row.pnl)}">${cny(row.pnl)}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
     const signals = PAPER?.recent_signals || [];
     $('#paper-signals').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>信号</th><th>状态</th><th>原因</th></tr></thead>
