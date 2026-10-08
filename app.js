@@ -212,7 +212,9 @@
     const evaluation = day?.evaluation || {};
     $('#candidate-kpis').innerHTML = [
       kpi('当日待定票', `${num(day?.candidate_count || 0)} 只`,
-        `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
+        day?.mode === 'live_shadow'
+          ? `可买 ${num(day?.eligible_candidate_count || 0)} · 高位排除 ${num(day?.high_return_rejected_count || 0)}`
+          : `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
@@ -240,6 +242,7 @@
       unfilled: '下一周期未成交',
       censored: '后续样本不足',
       live_pending: '盘中观察',
+      live_rejected_high: '首点涨幅>5%，不宜买入',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
       <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>画像分</th>
