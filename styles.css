@@ -73,6 +73,7 @@ main{max-width:1440px;margin:auto;padding:22px 24px 48px}
 .down{color:var(--green)!important}
 .neutral{color:var(--cyan)!important}
 .chart-grid,.split-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:14px}
+.chart-grid>*,.split-grid>*{min-width:0}
 .panel{
   border:1px solid var(--line);border-radius:var(--radius);
   background:var(--panel);margin-bottom:14px;padding:16px;
@@ -176,7 +177,7 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   main{padding:16px 12px 36px}
   .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .kpi{min-height:104px}
-  .kpi strong{font-size:22px}
+  .kpi strong{font-size:20px;overflow-wrap:anywhere}
   .chart-grid,.split-grid{grid-template-columns:1fr}
   .chart{height:280px}
   .definition-grid{grid-template-columns:1fr}
