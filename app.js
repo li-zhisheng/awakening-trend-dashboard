@@ -205,7 +205,7 @@
       ? `${day.date} · ${day.mode === 'live_shadow'
         ? `${day.cadence === 'one_minute'
           ? '分钟级实时影子'
-          : '今日旧5分钟批次'} · 更新 ${dt(day.updated_at)}`
+          : '今日旧5分钟排序 · 首信号已按分钟校正'} · 更新 ${dt(day.updated_at)}`
         : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
@@ -216,14 +216,13 @@
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
-          ? `防追高拦截 ${num(
-            day?.anti_chase_rejected_count || 0)} 次`
+          ? '首次出现即记录源时间与价格'
           : '信号时间不晚于 10:00'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
         day?.mode === 'live_shadow'
           ? day.cadence === 'one_minute'
             ? '同一扫描分钟横向比较'
-            : '今日按旧5分钟批次生成'
+            : '今日排序沿用旧5分钟批次'
           : '同一5分钟横向比较'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
         day?.mode === 'live_shadow'
@@ -253,7 +252,11 @@
       const signalTime = selection.live_shadow
         ? dt(selection.signal_at).split(' ')[1]
         : clock(selection.signal_time);
-      return `<tr><td>${esc(signalTime)}</td>
+      const signalPrice = (
+        selection.live_shadow
+        && Number.isFinite(Number(selection.signal_price))
+      ) ? `<br><small>¥${num(selection.signal_price, 2)}</small>` : '';
+      return `<tr><td>${esc(signalTime)}${signalPrice}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
         <td>${esc(selection.industry || '—')}</td>
