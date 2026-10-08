@@ -203,7 +203,9 @@
     $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
     $('#candidate-date-status').textContent = day
       ? `${day.date} · ${day.mode === 'live_shadow'
-        ? `盘中实时影子 · 更新 ${dt(day.updated_at)}`
+        ? `${day.cadence === 'one_minute'
+          ? '分钟级实时影子'
+          : '今日旧5分钟批次'} · 更新 ${dt(day.updated_at)}`
         : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
@@ -214,7 +216,11 @@
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
         '信号时间不晚于 10:00'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
-        '同一5分钟横向比较'),
+        day?.mode === 'live_shadow'
+          ? day.cadence === 'one_minute'
+            ? '同一扫描分钟横向比较'
+            : '今日按旧5分钟批次生成'
+          : '同一5分钟横向比较'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
         day?.mode === 'live_shadow'
           ? '盘中名单尚无事后收益'
@@ -240,7 +246,10 @@
     </tr></thead><tbody>${rows.length ? rows.map(item => {
       const selection = item.selection;
       const outcome = item.evaluation || {};
-      return `<tr><td>${esc(selection.signal_time)}</td>
+      const signalTime = selection.live_shadow
+        ? dt(selection.signal_at).split(' ')[1]
+        : clock(selection.signal_time);
+      return `<tr><td>${esc(signalTime)}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
         <td>${esc(selection.industry || '—')}</td>
