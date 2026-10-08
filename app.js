@@ -214,7 +214,11 @@
       kpi('当日待定票', `${num(day?.candidate_count || 0)} 只`,
         `多 ${num(day?.strong_candidate_count || 0)} · 涨 ${num(day?.weak_candidate_count || 0)}`),
       kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
-        '信号时间不晚于 10:00'),
+        day?.mode === 'live_shadow'
+          && day.cadence === 'one_minute'
+          ? `防追高拦截 ${num(
+            day?.anti_chase_rejected_count || 0)} 次`
+          : '信号时间不晚于 10:00'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
         day?.mode === 'live_shadow'
           ? day.cadence === 'one_minute'
