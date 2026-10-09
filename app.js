@@ -98,6 +98,17 @@
     };
   }
 
+  function resizeVisibleCharts() {
+    charts.forEach((instance, id) => {
+      const node = document.getElementById(id);
+      if (!node || node.clientWidth <= 0 || node.clientHeight <= 0) return;
+      instance.resize({
+        width: node.clientWidth,
+        height: node.clientHeight,
+      });
+    });
+  }
+
   function movingAverage(values, period) {
     let sum = 0;
     return values.map((value, index) => {
@@ -1570,6 +1581,12 @@
       opportunity.results?.heldout?.all_candidates || {};
     const quality = research.signal_quality || {};
     const qualityAcceptance = quality.acceptance || {};
+    const qualitySelection = research.quality_selection || {};
+    const selectionAcceptance = qualitySelection.acceptance || {};
+    const heldoutSelection =
+      qualitySelection.results?.heldout?.selected || {};
+    const septemberSelection =
+      qualitySelection.results?.september_5d?.selected || {};
     const validation = DATA.paper_validation || {};
     $('#research-kpis').innerHTML = [
       kpi('全天首次多头', num(quality.sample?.events),
@@ -1585,6 +1602,22 @@
         qualityAcceptance.model_return_passed ? '通过' : '未通过',
         '三个未来区间净收益均需为正',
         qualityAcceptance.model_return_passed ? 'up' : 'down'),
+      kpi('优质多头点估计',
+        selectionAcceptance.point_estimates_passed ? '通过' : '未通过',
+        '验证、7月、8月、9月固定5日',
+        selectionAcceptance.point_estimates_passed ? 'up' : 'down'),
+      kpi('影子统计置信',
+        selectionAcceptance.statistical_confidence_passed ? '通过' : '不足',
+        '各期日度Bootstrap 95%下界需大于0',
+        selectionAcceptance.statistical_confidence_passed ? 'up' : 'down'),
+      kpi('7-8月预算净收益',
+        pct(heldoutSelection.budget_slot_net_return),
+        `${num(heldoutSelection.selected)} 只 · 未入选槽位留现金`,
+        tone(heldoutSelection.budget_slot_net_return)),
+      kpi('9月固定5日净收益',
+        pct(septemberSelection.budget_slot_net_return),
+        `${num(septemberSelection.selected)} 只 · 非20日截断口径`,
+        tone(septemberSelection.budget_slot_net_return)),
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
       kpi('提前空点胜率', pct(early.early_trade_win_rate), `原空点 ${pct(early.base_trade_win_rate)}`),
       kpi('赢家画像大涨股', num(staged.return_winner_count), `V2 ${num(compare.return_winner_count)}`),
@@ -1636,6 +1669,42 @@
       <th>风险门成交率</th><th>风险门浮亏≥5%</th>
       <th>精选模型槽位收益</th><th>精选数</th><th>精选浮亏≥5%</th>
       </tr></thead><tbody>${qualityRows || emptyRow(8)}</tbody>`;
+
+    const selectionSplits = [
+      ['validation', '5-6月验证'],
+      ['july', '7月留出'],
+      ['august', '8月留出'],
+      ['september_5d', '9月固定5日'],
+    ];
+    const selectionRows = selectionSplits.map(([key, label]) => {
+      const row =
+        qualitySelection.results?.[key]?.selected || {};
+      const ci = row.budget_slot_net_return_ci95 || [];
+      return `<tr><td>${esc(label)}</td>
+        <td>${num(row.selected)}</td>
+        <td>${pct(row.execution_rate)}</td>
+        <td class="${tone(row.budget_slot_net_return)}">${pct(row.budget_slot_net_return)}</td>
+        <td class="${tone(ci[0])}">${pct(ci[0])} ～ ${pct(ci[1])}</td>
+        <td class="${tone(row.profit_per_100k_daily_budget)}">${cny(row.profit_per_100k_daily_budget)}</td>
+        <td>${pct(row.filled_win_rate)}</td>
+        <td class="up">${pct(row.mean_max_floating_profit)}</td>
+        <td class="down">${pct(row.mean_max_floating_loss)}</td>
+        <td class="down">${pct(row.loss_5_rate)}</td></tr>`;
+    }).join('');
+    $('#quality-selection-status').textContent =
+      selectionAcceptance.buy_control_passed
+        ? '可控制买入'
+        : selectionAcceptance.point_estimates_passed
+          ? '仅影子，未控制买入'
+          : '研究未通过';
+    $('#quality-selection-status').className =
+      `status ${selectionAcceptance.buy_control_passed ? 'ok' : 'bad'}`;
+    $('#quality-selection-table').innerHTML = `<thead><tr>
+      <th>时间外样本</th><th>入选</th><th>执行率</th>
+      <th>每日预算净收益</th><th>日度95%区间</th>
+      <th>每10万累计实际盈亏</th><th>成交胜率</th>
+      <th>最大浮盈</th><th>最大浮亏</th><th>浮亏≥5%</th>
+      </tr></thead><tbody>${selectionRows || emptyRow(10)}</tbody>`;
 
     const bandLabels = {
       open: '09:30–10:00',
@@ -1769,6 +1838,13 @@
       ['收益模型控制买入',
         DATA.research?.signal_quality?.acceptance?.buy_control_passed
           ? '已通过' : '未通过，只展示研究结果'],
+      ['优质多头影子风险门',
+        DATA.research?.quality_selection?.method?.guard],
+      ['优质多头影子排序',
+        DATA.research?.quality_selection?.method?.score],
+      ['优质多头控制买入',
+        DATA.research?.quality_selection?.acceptance?.buy_control_passed
+          ? '已通过' : '未通过，仅影子排名'],
       ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
       ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
       ['跌信号退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
@@ -1792,6 +1868,7 @@
       entry_price: '入场价格',
       opportunity_risk: '机会风险研究',
       signal_quality: '全天信号质量',
+      quality_selection: '优质多头影子筛选',
       winner_shadow: '即时影子',
       daily_candidates: '机会观察池',
       candidate_accounts: '候选账户对照',
@@ -1807,7 +1884,7 @@
   function activateView(name) {
     document.querySelectorAll('.view').forEach(node => node.classList.toggle('active', node.id === `view-${name}`));
     document.querySelectorAll('.view-tabs button').forEach(node => node.classList.toggle('active', node.dataset.view === name));
-    requestAnimationFrame(() => charts.forEach(instance => instance.resize()));
+    resizeVisibleCharts();
   }
 
   function bind() {
@@ -1850,7 +1927,7 @@
       charts.get('stock-detail-chart')?.off('click');
     });
     $('#refresh').addEventListener('click', () => location.reload());
-    window.addEventListener('resize', () => charts.forEach(instance => instance.resize()));
+    window.addEventListener('resize', resizeVisibleCharts);
   }
 
   async function boot() {
