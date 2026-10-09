@@ -8,7 +8,7 @@
   <title>多空指标 · 历史回测与实盘验证</title>
   <link rel="stylesheet" href="styles.css?v=20261008-dynamic-entry-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261009-quality-selection-v2" defer></script>
+  <script src="app.js?v=20261009-dynamic-quality-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -84,7 +84,7 @@
         <div class="panel-head">
           <div>
             <h2>动态买入机会</h2>
-            <p>默认只显示已满足入场条件的股票；高位和待企稳信号保留在观察池</p>
+            <p>默认只显示连续企稳的低追高质量信号；未就绪项保留在观察池</p>
           </div>
           <div class="segmented" role="tablist" aria-label="机会范围">
             <button class="active" type="button" data-candidate-scope="buyable" role="tab" aria-selected="true">可买</button>
@@ -98,7 +98,7 @@
       </section>
       <section class="panel warning-panel">
         <h2>验证边界</h2>
-        <p>动态入场状态只作前瞻影子验证，不控制交易。高位信号等待回落企稳，水下信号保留观察；板块与相对强度参与连续排序，不作为单一硬门槛。历史简单回撤和简单板块阈值均未稳定通过样本外验证。</p>
+        <p>动态入场状态只作前瞻影子验证，不控制交易。首点涨幅不超过 3%、扰动稳定且趋势一致分达标后才进入观察；连续两分钟保持多头且价格未显著走弱才标记就绪。机会风险、板块和相对强度仅作辅助分，不再作为硬门槛。</p>
       </section>
     </section>
 

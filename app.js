@@ -264,8 +264,10 @@
     $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
     $('#candidate-date-status').textContent = day
       ? `${day.date} · ${day.mode === 'live_shadow'
-        ? `${day.cadence === 'one_minute'
-          ? '分钟级实时影子'
+        ? `${day.quality_selector_active === false
+          ? '修复前旧机会门快照，新质量门下个交易日生效'
+          : day.cadence === 'one_minute'
+            ? '分钟级质量影子'
           : '今日旧5分钟排序 · 首信号已按分钟校正'} · 更新 ${dt(day.updated_at)}`
         : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
@@ -284,6 +286,10 @@
           && day.cadence === 'one_minute'
           ? '首次出现即记录源时间与价格'
           : '信号时间不晚于 10:00'),
+      kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
+        day?.quality_selector_active === false
+          ? '当前日期为修复前旧快照'
+          : '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
         day?.mode === 'live_shadow'
           ? day.cadence === 'one_minute'
@@ -309,8 +315,8 @@
       complete: '验证完成',
       unfilled: '下一周期未成交',
       censored: '后续样本不足',
-      live_pending: '机会达标，可买观察',
-      live_rejected_high: '机会达标，首点>5%不可买',
+      live_pending: '质量门达标，可买观察',
+      live_rejected_high: '质量门达标，首点>5%不可买',
       live_immediate_watch: '持续观察',
       live_wait_pullback: '等待回落',
       live_ready_shadow: '回落/走势企稳，仅影子就绪',
@@ -323,7 +329,8 @@
       reject_high_signal: '首点>5%永久不可买',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>机会风险分</th>
+      <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th>
+      <th>趋势质量分</th><th>机会风险辅助</th>
       <th>+10%先于-5%</th><th>最大浮盈≥20%</th><th>最大浮亏≥5%</th>
       <th>信号时涨幅</th><th>板块分</th><th>相对板块</th><th>资金确认</th>
       <th>当前涨幅</th><th>峰值回撤</th><th>企稳分钟</th><th>动态入场计划</th>
@@ -354,6 +361,8 @@
         <td>${esc(industryName(selection.industry))}</td>
         <td class="up">${signalLabel(1, selection.strength)}</td>
         <td>${selection.score == null ? '—' : num(selection.score, 3)}</td>
+        <td>${selection.opportunity_risk_score == null
+          ? '—' : num(selection.opportunity_risk_score, 3)}</td>
         <td>${selection.profit_10_before_loss_5_probability == null
           ? '—' : pct(selection.profit_10_before_loss_5_probability, 0)}</td>
         <td>${selection.max_floating_profit_20_probability == null
@@ -373,7 +382,7 @@
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
     }).join('') : emptyRow(
-      21,
+      22,
       day
         ? candidateScope === 'buyable'
           ? '当日没有满足动态买入条件的股票'
