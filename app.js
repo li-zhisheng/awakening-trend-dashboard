@@ -220,7 +220,19 @@
   function isBuyableCandidate(item) {
     const selection = item?.selection || {};
     if (selection.entry_status) {
-      return selection.entry_ready === true;
+      const signalReturn = Number(selection.intraday_return);
+      return (
+        selection.entry_ready === true
+        && Number.isFinite(signalReturn)
+        && signalReturn <= .05
+        && (
+          signalReturn <= .03
+          || (
+            selection.entry_plan === 'pullback_then_stabilize'
+            && selection.pullback_seen === true
+          )
+        )
+      );
     }
     return (
       selection.entry_eligible !== false
@@ -297,6 +309,7 @@
     const entryPlanLabel = {
       stabilize_then_rank: '观察企稳后排序',
       pullback_then_stabilize: '等待回落企稳',
+      reject_high_signal: '首点>5%永久不可买',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
       <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th><th>机会风险分</th>
@@ -1555,8 +1568,23 @@
       opportunity.results?.heldout?.selected || {};
     const opportunityBase =
       opportunity.results?.heldout?.all_candidates || {};
+    const quality = research.signal_quality || {};
+    const qualityAcceptance = quality.acceptance || {};
     const validation = DATA.paper_validation || {};
     $('#research-kpis').innerHTML = [
+      kpi('全天首次多头', num(quality.sample?.events),
+        '早盘、上午后段、下午、尾盘全部覆盖'),
+      kpi('低风险稳定样本',
+        num(quality.sample?.eligible_stable_events),
+        '首次涨幅≤5%且当时稳定性通过'),
+      kpi('风险门验收',
+        qualityAcceptance.risk_filter_passed ? '通过' : '未通过',
+        '验证、留出、短留出均需降低浮亏',
+        qualityAcceptance.risk_filter_passed ? 'up' : 'down'),
+      kpi('收益推荐验收',
+        qualityAcceptance.model_return_passed ? '通过' : '未通过',
+        '三个未来区间净收益均需为正',
+        qualityAcceptance.model_return_passed ? 'up' : 'down'),
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
       kpi('提前空点胜率', pct(early.early_trade_win_rate), `原空点 ${pct(early.base_trade_win_rate)}`),
       kpi('赢家画像大涨股', num(staged.return_winner_count), `V2 ${num(compare.return_winner_count)}`),
@@ -1575,6 +1603,62 @@
         announcementStable ? 'up' : 'down'),
       kpi('分钟会计验收', validation.status === 'passed' ? '通过' : '待验收', `${num(validation.snapshots)} 个快照`),
     ].join('');
+
+    const qualitySplits = [
+      ['validation', '5-6月验证'],
+      ['heldout', '7-8月留出'],
+      ['final_short_holdout', '9月短留出'],
+    ];
+    const qualityRows = qualitySplits.map(([key, label]) => {
+      const all = quality.profiles?.[key]?.all || {};
+      const guarded =
+        quality.profiles?.[key]?.buyable_and_stable || {};
+      const selected = quality.model?.results?.[key] || {};
+      return `<tr><td>${esc(label)}</td>
+        <td class="${tone(all.slot_mean_net_return)}">${pct(all.slot_mean_net_return)}</td>
+        <td class="${tone(guarded.slot_mean_net_return)}">${pct(guarded.slot_mean_net_return)}</td>
+        <td>${pct(guarded.fill_rate)}</td>
+        <td class="down">${pct(guarded.loss_5_rate)}</td>
+        <td class="${tone(selected.slot_mean_net_return)}">${pct(selected.slot_mean_net_return)}</td>
+        <td>${num(selected.events)}</td>
+        <td class="down">${pct(selected.loss_5_rate)}</td></tr>`;
+    }).join('');
+    $('#quality-status').textContent =
+      qualityAcceptance.buy_control_passed
+        ? '可控制买入'
+        : qualityAcceptance.risk_filter_passed
+          ? '仅风险门通过'
+          : '研究未通过';
+    $('#quality-status').className =
+      `status ${qualityAcceptance.buy_control_passed ? 'ok' : 'bad'}`;
+    $('#quality-table').innerHTML = `<thead><tr>
+      <th>时间外样本</th><th>全信号槽位收益</th><th>风险门后槽位收益</th>
+      <th>风险门成交率</th><th>风险门浮亏≥5%</th>
+      <th>精选模型槽位收益</th><th>精选数</th><th>精选浮亏≥5%</th>
+      </tr></thead><tbody>${qualityRows || emptyRow(8)}</tbody>`;
+
+    const bandLabels = {
+      open: '09:30–10:00',
+      late_morning: '10:00–11:30',
+      afternoon: '13:00–14:30',
+      late_session: '14:30–14:55',
+    };
+    const bandRows = Object.entries(bandLabels).map(([band, label]) => {
+      const cells = qualitySplits.map(([key]) =>
+        quality.profiles?.[key]?.[`buyable_stable_${band}`] || {});
+      return `<tr><td>${esc(label)}</td>${cells.map(cell =>
+        `<td class="${tone(cell.slot_mean_net_return)}">${pct(cell.slot_mean_net_return)}</td>
+         <td class="down">${pct(cell.loss_5_rate)}</td>
+         <td>${pct(cell.fill_rate)}</td>`).join('')}</tr>`;
+    }).join('');
+    $('#quality-band-table').innerHTML = `<thead><tr>
+      <th rowspan="2">首次信号时段</th>
+      <th colspan="3">5-6月验证</th><th colspan="3">7-8月留出</th>
+      <th colspan="3">9月短留出</th></tr><tr>
+      <th>收益</th><th>浮亏≥5%</th><th>成交率</th>
+      <th>收益</th><th>浮亏≥5%</th><th>成交率</th>
+      <th>收益</th><th>浮亏≥5%</th><th>成交率</th>
+      </tr></thead><tbody>${bandRows || emptyRow(10)}</tbody>`;
 
     const entryLabels = ['信号收盘', '下一开盘', '下一收盘'];
     const entryValues = [
@@ -1680,6 +1764,11 @@
       ['机会观察池', DATA.daily_candidates?.contract?.selection],
       ['观察池信号分类', DATA.daily_candidates?.contract?.signal_strength],
       ['未来收益参与选择', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
+      ['全天风险门', DATA.research?.signal_quality?.entry_contract?.guard],
+      ['全天风险门成交', DATA.research?.signal_quality?.entry_contract?.fill],
+      ['收益模型控制买入',
+        DATA.research?.signal_quality?.acceptance?.buy_control_passed
+          ? '已通过' : '未通过，只展示研究结果'],
       ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
       ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
       ['跌信号退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
@@ -1702,6 +1791,7 @@
       winner_onset: '首次多头',
       entry_price: '入场价格',
       opportunity_risk: '机会风险研究',
+      signal_quality: '全天信号质量',
       winner_shadow: '即时影子',
       daily_candidates: '机会观察池',
       candidate_accounts: '候选账户对照',

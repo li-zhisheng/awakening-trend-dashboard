@@ -8,7 +8,7 @@
   <title>多空指标 · 历史回测与实盘验证</title>
   <link rel="stylesheet" href="styles.css?v=20261008-dynamic-entry-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261009-minute-navigation-v4" defer></script>
+  <script src="app.js?v=20261009-signal-quality-v5" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -166,6 +166,19 @@
 
     <section id="view-research" class="view">
       <div id="research-kpis" class="kpi-grid"></div>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>全天信号质量</h2><p>57,448 条首次多头，买入风险门与收益模型分开验收</p></div>
+          <span id="quality-status" class="status"></span>
+        </div>
+        <div class="table-wrap"><table id="quality-table"></table></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>分时段风险收益</h2><p>首次涨幅不超过 5% 且当时稳定性通过，不同时段独立比较</p></div>
+        </div>
+        <div class="table-wrap"><table id="quality-band-table"></table></div>
+      </section>
       <div class="chart-grid">
         <section class="panel chart-panel">
           <div class="panel-head"><div><h2>三种入场价格</h2><p>同名单、同卖点的配对比较</p></div></div>
