@@ -245,10 +245,7 @@
         )
       );
     }
-    return (
-      selection.entry_eligible !== false
-      && item?.evaluation?.status !== 'live_legacy_review'
-    );
+    return selection.entry_eligible !== false;
   }
 
   function renderCandidateDate(value) {
@@ -264,11 +261,7 @@
     $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
     $('#candidate-date-status').textContent = day
       ? `${day.date} · ${day.mode === 'live_shadow'
-        ? `${day.quality_selector_active === false
-          ? '修复前旧机会门快照，新质量门下个交易日生效'
-          : day.cadence === 'one_minute'
-            ? '分钟级质量影子'
-          : '今日旧5分钟排序 · 首信号已按分钟校正'} · 更新 ${dt(day.updated_at)}`
+        ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
         : day.mode === 'historical_quality'
           ? '历史质量回放'
           : '交易日样本'}`
@@ -284,21 +277,17 @@
           ? `等待回落 ${num(day?.wait_pullback_count || 0)} · 全部观察 ${num(allRows.length)}`
           : day?.mode === 'historical_quality'
             ? `质量门历史回放 · 全部 ${num(allRows.length)}`
-            : `不可买/旧口径 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
+            : `不可买 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
       kpi('首次多头候选', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
           ? '首次出现即记录源时间与价格'
           : '历史回放覆盖全天四个时段'),
       kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
-        day?.quality_selector_active === false
-          ? '当前日期为修复前旧快照'
-          : '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
+        '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
         day?.mode === 'live_shadow'
-          ? day.cadence === 'one_minute'
-            ? '同一扫描分钟横向比较'
-            : '今日排序沿用旧5分钟批次'
+          ? '同一扫描分钟横向比较'
           : '同一5分钟横向比较'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
         day?.mode === 'live_shadow'
@@ -319,13 +308,10 @@
       complete: '验证完成',
       unfilled: '下一周期未成交',
       censored: '后续样本不足',
-      live_pending: '质量门达标，可买观察',
-      live_rejected_high: '质量门达标，首点>5%不可买',
       live_immediate_watch: '持续观察',
       live_wait_pullback: '等待回落',
       live_ready_shadow: '回落/走势企稳，仅影子就绪',
       live_invalidated: '当前失效',
-      live_legacy_review: '旧口径复盘，不作为新规则买入',
     };
     const entryPlanLabel = {
       stabilize_then_rank: '观察企稳后排序',
