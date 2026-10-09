@@ -1683,6 +1683,7 @@
       return `<tr><td>${esc(label)}</td>
         <td>${num(row.selected)}</td>
         <td>${pct(row.execution_rate)}</td>
+        <td>${pct(row.outcome_resolution_rate)}</td>
         <td class="${tone(row.budget_slot_net_return)}">${pct(row.budget_slot_net_return)}</td>
         <td class="${tone(ci[0])}">${pct(ci[0])} ～ ${pct(ci[1])}</td>
         <td class="${tone(row.profit_per_100k_daily_budget)}">${cny(row.profit_per_100k_daily_budget)}</td>
@@ -1700,11 +1701,11 @@
     $('#quality-selection-status').className =
       `status ${selectionAcceptance.buy_control_passed ? 'ok' : 'bad'}`;
     $('#quality-selection-table').innerHTML = `<thead><tr>
-      <th>时间外样本</th><th>入选</th><th>执行率</th>
+      <th>时间外样本</th><th>入选</th><th>执行率</th><th>结果完整率</th>
       <th>每日预算净收益</th><th>日度95%区间</th>
       <th>每10万累计实际盈亏</th><th>成交胜率</th>
       <th>最大浮盈</th><th>最大浮亏</th><th>浮亏≥5%</th>
-      </tr></thead><tbody>${selectionRows || emptyRow(10)}</tbody>`;
+      </tr></thead><tbody>${selectionRows || emptyRow(11)}</tbody>`;
 
     const bandLabels = {
       open: '09:30–10:00',
