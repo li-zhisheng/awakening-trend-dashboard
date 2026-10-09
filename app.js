@@ -1595,6 +1595,14 @@
       qualitySelection.results?.heldout?.selected || {};
     const septemberSelection =
       qualitySelection.results?.september_5d?.selected || {};
+    const secondExit = research.second_entry_exit || {};
+    const secondRule = secondExit.second_entry?.selected;
+    const secondHeldout =
+      secondExit.second_entry?.results?.heldout?.[secondRule] || {};
+    const qualityHeldout =
+      secondExit.high_mfe_commonality
+        ?.episode_quality_results?.heldout || {};
+    const exitAccepted = Boolean(secondExit.early_exit?.accepted);
     const validation = DATA.paper_validation || {};
     $('#research-kpis').innerHTML = [
       kpi('全天首次多头', num(quality.sample?.events),
@@ -1626,6 +1634,17 @@
         pct(septemberSelection.budget_slot_net_return),
         `${num(septemberSelection.selected)} 只 · 非20日截断口径`,
         tone(septemberSelection.budget_slot_net_return)),
+      kpi('二次结构覆盖',
+        pct(secondHeldout.coverage),
+        '7-8月完整持仓区间'),
+      kpi('二次结构浮盈',
+        pct(secondHeldout.first_entry_mean_mfe_when_present),
+        `无二次结构 ${pct(secondHeldout.first_entry_mean_mfe_when_absent)}`,
+        'up'),
+      kpi('利润保护验收',
+        exitAccepted ? '通过' : '仅影子',
+        '无规则同时通过训练与全部样本外',
+        exitAccepted ? 'up' : 'down'),
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
       kpi('提前空点胜率', pct(early.early_trade_win_rate), `原空点 ${pct(early.base_trade_win_rate)}`),
       kpi('赢家画像大涨股', num(staged.return_winner_count), `V2 ${num(compare.return_winner_count)}`),
@@ -1737,6 +1756,66 @@
       <th>收益</th><th>浮亏≥5%</th><th>成交率</th>
       <th>收益</th><th>浮亏≥5%</th><th>成交率</th>
       </tr></thead><tbody>${bandRows || emptyRow(10)}</tbody>`;
+
+    const secondSplits = [
+      ['validation', '5-6月验证'],
+      ['heldout', '7-8月留出'],
+      ['final_short_holdout', '9月短留出'],
+    ];
+    const secondRows = secondSplits.map(([key, label]) => {
+      const row =
+        secondExit.second_entry?.results?.[key]?.[secondRule] || {};
+      const qualityRow =
+        secondExit.high_mfe_commonality
+          ?.episode_quality_results?.[key] || {};
+      return `<tr><td>${esc(label)}</td>
+        <td>${pct(row.coverage)}</td>
+        <td class="up">${pct(row.first_entry_mean_mfe_when_present)}</td>
+        <td>${pct(row.first_entry_mean_mfe_when_absent)}</td>
+        <td class="${tone(row.second_entry_mean_return)}">${pct(row.second_entry_mean_return)}</td>
+        <td class="${tone(row.mean_waiting_delta_vs_first_entry)}">${pct(row.mean_waiting_delta_vs_first_entry)}</td>
+        <td>${pct(qualityRow.mfe_20_rate)}</td>
+        <td>${num(qualityRow.mfe_20_lift, 2)}×</td>
+        <td class="${tone(qualityRow.mean_return)}">${pct(qualityRow.mean_return)}</td></tr>`;
+    }).join('');
+    $('#second-entry-table').innerHTML = `<thead><tr>
+      <th>样本</th><th>二次结构覆盖</th><th>有二次结构最大浮盈</th>
+      <th>无二次结构最大浮盈</th><th>二次入场收益</th>
+      <th>等待相对首次入场</th><th>优质规则浮盈≥20%</th>
+      <th>浮盈命中提升</th><th>优质规则最终收益</th>
+      </tr></thead><tbody>${secondRows || emptyRow(9)}</tbody>`;
+
+    const exitLabels = {
+      limit_streak2_break_after_1430: '连续两板后断板',
+      failed_limit_after_1430: '涨停炸板未回封',
+      trail_10_5: '浮盈10%后回撤5%',
+      trail_15_5: '浮盈15%后回撤5%',
+      price_volume_high15: '15日价量同步新高',
+      price_volume_high20: '20日价量同步新高',
+      fast_ema3_after_profit5: '浮盈5%后FAST下穿EMA3',
+    };
+    const exitRows = Object.entries(exitLabels).map(([key, label]) => {
+      const cells = ['train', ...secondSplits.map(item => item[0])].map(
+        split => secondExit.early_exit?.results?.[split]?.[key] || {});
+      const heldout = cells[2];
+      return `<tr><td>${esc(label)}</td>
+        ${cells.map(cell => {
+          const delta = Number(cell.candidate_mean_return)
+            - Number(cell.baseline_mean_return);
+          return `<td class="${tone(delta)}">${pct(delta)}</td>`;
+        }).join('')}
+        <td>${num(heldout.activated)}</td>
+        <td>${key === secondExit.early_exit?.recent_shadow_candidate
+          ? '近期影子候选' : '对照研究'}</td></tr>`;
+    }).join('');
+    $('#second-exit-status').textContent =
+      exitAccepted ? '通过正式门槛' : '仅影子，不控制卖出';
+    $('#second-exit-status').className =
+      `status ${exitAccepted ? 'ok' : 'bad'}`;
+    $('#profit-exit-table').innerHTML = `<thead><tr>
+      <th>提前卖出规则</th><th>1-4月</th><th>5-6月</th>
+      <th>7-8月</th><th>9月</th><th>7-8月触发</th><th>结论</th>
+      </tr></thead><tbody>${exitRows || emptyRow(7)}</tbody>`;
 
     const entryLabels = ['信号收盘', '下一开盘', '下一收盘'];
     const entryValues = [

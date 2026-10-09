@@ -88,6 +88,7 @@ main{max-width:1440px;margin:auto;padding:22px 24px 48px}
 .status.bad{color:var(--green);border-color:#285d49;background:#14251f}
 .chart{height:320px;min-height:240px}
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:4px}
+.research-subtable{margin-top:14px}
 table{width:100%;border-collapse:collapse;min-width:720px}
 th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
 th{position:sticky;top:0;background:#20292e;color:#aebbc0;font-size:12px;z-index:1}
