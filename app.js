@@ -269,7 +269,9 @@
           : day.cadence === 'one_minute'
             ? '分钟级质量影子'
           : '今日旧5分钟排序 · 首信号已按分钟校正'} · 更新 ${dt(day.updated_at)}`
-        : '交易日样本'}`
+        : day.mode === 'historical_quality'
+          ? '历史质量回放'
+          : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
     const evaluation = day?.evaluation || {};
@@ -280,12 +282,14 @@
         `${num(buyableRows.length)} 只`,
         dynamicEntry
           ? `等待回落 ${num(day?.wait_pullback_count || 0)} · 全部观察 ${num(allRows.length)}`
-          : `不可买/旧口径 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
-      kpi('早盘首次多头', `${num(day?.early_signal_count || 0)} 只`,
+          : day?.mode === 'historical_quality'
+            ? `质量门历史回放 · 全部 ${num(allRows.length)}`
+            : `不可买/旧口径 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
+      kpi('首次多头候选', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
           ? '首次出现即记录源时间与价格'
-          : '信号时间不晚于 10:00'),
+          : '历史回放覆盖全天四个时段'),
       kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
         day?.quality_selector_active === false
           ? '当前日期为修复前旧快照'
@@ -452,7 +456,16 @@
       `${pct(formal.annual_return)} · 不同口径`;
     $('#candidate-formal-weak-delta').className =
       tone(formal.annual_return);
-    renderCandidateDate(days.at(-1)?.date || '');
+    const latest = days.at(-1);
+    const initial = (
+      latest?.mode === 'live_shadow'
+      && latest.quality_selector_active === false
+      && !latest.candidate_count
+    )
+      ? [...days].reverse().find(day =>
+        day.eligible_candidate_count > 0)
+      : latest;
+    renderCandidateDate(initial?.date || '');
   }
 
   function moveCandidateDate(offset) {
