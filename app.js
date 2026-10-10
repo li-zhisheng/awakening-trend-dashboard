@@ -720,6 +720,73 @@
     return result;
   }
 
+  function parseArchivedMinute(payload, code, date, daily) {
+    const compact = String(date || '').replaceAll('-', '');
+    if (
+      payload?.schema !== 'awakening-minute-archive-stock-v1'
+      || payload.code !== code
+      || payload.date !== compact
+      || payload.frequency !== '1m'
+      || !Array.isArray(payload.points)
+      || payload.points.length < 200
+    ) {
+      throw new Error('SuperMind分钟归档不完整');
+    }
+    const context = dailyMinuteContext(daily, compact);
+    const rawClose = Number(payload.points.at(-1)?.[4]);
+    if (
+      !Number.isFinite(context.previousClose)
+      || context.previousClose <= 0
+      || !Number.isFinite(context.close)
+      || context.close <= 0
+      || !Number.isFinite(rawClose)
+      || rawClose <= 0
+    ) {
+      throw new Error('SuperMind分钟归档缺少日K复权基准');
+    }
+    const factor = context.close / rawClose;
+    let cumulativeVolume = 0;
+    let cumulativeAmount = 0;
+    const points = payload.points.map(row => {
+      const time = String(row?.[0] || '');
+      const close = Number(row?.[4]);
+      const volume = Number(row?.[5]);
+      const amount = Number(row?.[6]);
+      if (
+        !/^\d{4}$/.test(time)
+        || !Number.isFinite(close) || close <= 0
+        || !Number.isFinite(volume) || volume < 0
+        || !Number.isFinite(amount) || amount < 0
+      ) return null;
+      cumulativeVolume += volume;
+      cumulativeAmount += amount;
+      return [
+        time, close * factor, volume, amount,
+        cumulativeVolume > 0
+          ? cumulativeAmount / cumulativeVolume * factor : null,
+      ];
+    }).filter(Boolean);
+    if (points.length < 200) {
+      throw new Error('SuperMind分钟归档有效分钟不足');
+    }
+    return [
+      `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6)}`,
+      context.previousClose, points, [],
+      'SuperMind真实1分钟统一归档', '1分钟', null,
+    ];
+  }
+
+  async function loadArchivedMinute(code, date, daily) {
+    const base = String(DATA.minute_archive?.base_url || '')
+      .replace(/\/+$/, '');
+    const compact = String(date || '').replaceAll('-', '');
+    if (!base || !/^\d{8}$/.test(compact)) return null;
+    const payload = await loadFirst([
+      `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json`,
+    ]);
+    return parseArchivedMinute(payload, code, date, daily);
+  }
+
   async function loadTencentMinutes(code, daily) {
     const symbol = stockSymbol(code);
     if (!symbol) return [];
@@ -751,7 +818,7 @@
       current, history, symbol, daily);
   }
 
-  async function loadStockMinutes(code, daily) {
+  async function loadStockMinutes(code, daily, requestedDate = '') {
     if (!stockMinuteCache.has(code)) {
       const days = [];
       const live = await loadStockLive(code);
@@ -787,14 +854,31 @@
       } catch (_error) {
         // Persisted Tencent/Sina one-minute evidence remains available.
       }
-      if (!days.length) throw new Error('分时数据暂不可用');
       stockMinuteCache.set(code, {
         code,
         schema: 'awakening-trend-online-minutes-v1',
         days,
       });
     }
-    return stockMinuteCache.get(code);
+    const result = stockMinuteCache.get(code);
+    if (
+      requestedDate
+      && !result.days.some(day => day[0] === requestedDate)
+    ) {
+      try {
+        const archived = await loadArchivedMinute(
+          code, requestedDate, daily);
+        if (archived) {
+          result.days.push(archived);
+          result.days.sort((left, right) =>
+            left[0].localeCompare(right[0]));
+        }
+      } catch (_error) {
+        // The requested stock day may legitimately be outside archive scope.
+      }
+    }
+    if (!result.days.length) throw new Error('分时数据暂不可用');
+    return result;
   }
 
   function renderStockAccountDetail(row) {
@@ -1369,11 +1453,14 @@
     syncStockMinuteNavigation();
   }
 
-  async function ensureStockMinutes(state) {
-    if (state.minute) return true;
+  async function ensureStockMinutes(state, requestedDate = '') {
+    if (
+      state.minute
+      && (!requestedDate || state.minuteByDate.has(requestedDate))
+    ) return true;
     if (!state.minutePromise) {
       state.minutePromise = loadStockMinutes(
-        state.code, state.daily);
+        state.code, state.daily, requestedDate);
     }
     try {
       const minute = await state.minutePromise;
@@ -1391,13 +1478,13 @@
       syncStockMinuteNavigation();
       if (!dates.length) {
         $('#stock-market-status').textContent =
-          '该股票没有腾讯/新浪1分钟数据';
+          '该股票没有统一归档或腾讯/新浪1分钟数据';
       }
       return Boolean(dates.length);
     } catch (_error) {
       if (stockMarketState === state) {
         $('#stock-market-status').textContent =
-          '该股票没有腾讯/新浪1分钟数据';
+          '该股票没有统一归档或腾讯/新浪1分钟数据';
       }
       return false;
     } finally {
@@ -1409,12 +1496,12 @@
     const state = stockMarketState;
     if (!state || !date) return;
     $('#stock-market-status').textContent =
-      `正在核对 ${date} 的腾讯/新浪1分钟行情`;
-    if (!(state.minute || await ensureStockMinutes(state))) return;
+      `正在核对 ${date} 的统一SuperMind 1分钟归档`;
+    if (!await ensureStockMinutes(state, date)) return;
     if (stockMarketState !== state) return;
     if (!state.minuteByDate.has(date)) {
       $('#stock-market-status').textContent =
-        `${date} 没有腾讯/新浪真实1分钟数据，已保留日K`;
+        `${date} 没有统一归档的真实1分钟数据，已保留日K`;
       return;
     }
     state.date = date;
@@ -1438,7 +1525,7 @@
     } else {
       if (!state.minute) {
         $('#stock-market-status').textContent =
-          '正在读取腾讯/新浪1分钟行情';
+          '正在读取统一SuperMind 1分钟归档或腾讯/新浪行情';
       }
       if (!(state.minute || await ensureStockMinutes(state))) return;
       if (stockMarketState !== state || state.view !== 'minute') return;
@@ -1940,7 +2027,7 @@
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
       ['触发价格口径', DATA.intraday_replay?.price_contract],
-      ['个股图表', '前复权日K + 腾讯最近5日1分钟价量（腾讯/新浪分钟快照兜底）'],
+      ['个股图表', '前复权日K + 统一SuperMind历史1分钟归档（腾讯/新浪近期行情兜底）'],
     ];
     $('#contract-list').innerHTML = items.map(([label, value]) =>
       `<div class="definition"><span>${esc(label)}</span><strong>${esc(value || '—')}</strong></div>`).join('');
