@@ -276,10 +276,8 @@
     $('#candidate-prev').disabled = index <= 0;
     $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
     $('#candidate-date-status').textContent = day
-      ? `${day.date} · ${day.mode === 'live_shadow_unavailable'
-        ? '旧版影子记录 · 当前口径未开放'
-        : day.mode === 'live_shadow'
-          ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
+      ? `${day.date} · ${day.mode === 'live_shadow'
+        ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
         : day.mode === 'historical_quality'
           ? '历史质量回放'
           : '交易日样本'}`
@@ -297,20 +295,14 @@
             ? `质量门历史回放 · 全部 ${num(allRows.length)}`
             : `不可买 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
       kpi('首次多头候选', `${num(day?.early_signal_count || 0)} 只`,
-        day?.mode === 'live_shadow_unavailable'
-          ? '仅保留旧版观察计数，不回填当前候选'
-          : day?.mode === 'live_shadow'
+        day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
           ? '首次出现即记录源时间与价格'
           : '历史回放覆盖全天四个时段'),
       kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
-        day?.mode === 'live_shadow_unavailable'
-          ? '旧策略与当前质量规则不可比'
-          : '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
+        '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
-        day?.mode === 'live_shadow_unavailable'
-          ? '旧版影子扫描批次'
-          : day?.mode === 'live_shadow'
+        day?.mode === 'live_shadow'
           ? '同一扫描分钟横向比较'
           : '同一5分钟横向比较'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
@@ -398,9 +390,7 @@
     }).join('') : emptyRow(
       22,
       day
-        ? day.mode === 'live_shadow_unavailable'
-          ? '该日为旧版影子口径，当前机会规则未开放；未回填或伪造候选'
-          : candidateScope === 'buyable'
+        ? candidateScope === 'buyable'
           ? '当日没有满足动态买入条件的股票'
           : '当日没有股票进入观察池'
         : '该日期没有交易日样本',
@@ -413,20 +403,6 @@
   function renderCandidates() {
     const payload = DATA.daily_candidates || {};
     const summary = payload.summary || {};
-    const accounts = DATA.candidate_account_comparison || {};
-    const baseline = accounts.baseline_early_raw || {};
-    const opportunity = accounts.opportunity_observation || {};
-    const candidate =
-      accounts.buyable_candidates || accounts.high_quality_candidates || {};
-    const strongCandidate =
-      accounts.buyable_strong_only
-      || accounts.high_quality_strong_only || {};
-    const allStrengthCandidate =
-      accounts.buyable_candidates
-      || accounts.high_quality_strong_plus_weak || candidate;
-    const weakContribution = accounts.weak_long_contribution || {};
-    const delta = accounts.delta || {};
-    const formal = accounts.formal_all_signal_reference || {};
     const days = candidateDays();
     const input = $('#candidate-date');
     if (days.length) {
@@ -436,39 +412,14 @@
     $('#candidate-hash').textContent = payload.selection_sha256
       ? `${num(summary.trading_days)} 日 · ${num(summary.candidate_count)} 只 · 选择哈希 ${payload.selection_sha256.slice(0, 16)}`
       : '选择哈希 —';
-    $('#candidate-account-baseline').textContent =
-      pct(baseline.annual_return);
-    $('#candidate-account-baseline').className =
-      tone(baseline.annual_return);
-    $('#candidate-account-return').textContent =
-      pct(candidate.annual_return);
-    $('#candidate-account-return').className =
-      tone(candidate.annual_return);
-    $('#candidate-account-delta').textContent =
-      pct(delta.annual_return);
-    $('#candidate-account-delta').className =
-      tone(delta.annual_return);
-    $('#candidate-formal-reference').textContent =
-      `${pct(opportunity.annual_return)} · 不控制买入`;
-    $('#candidate-formal-reference').className =
-      tone(opportunity.annual_return);
-    $('#candidate-strong-return').textContent =
-      pct(strongCandidate.annual_return, 4);
-    $('#candidate-strong-return').className =
-      tone(strongCandidate.annual_return);
-    $('#candidate-all-strength-return').textContent =
-      pct(allStrengthCandidate.annual_return, 4);
-    $('#candidate-all-strength-return').className =
-      tone(allStrengthCandidate.annual_return);
-    $('#candidate-weak-delta').textContent =
-      pct(weakContribution.annual_return, 4);
-    $('#candidate-weak-delta').className =
-      tone(weakContribution.annual_return);
-    $('#candidate-formal-weak-delta').textContent =
-      `${pct(formal.annual_return)} · 不同口径`;
-    $('#candidate-formal-weak-delta').className =
-      tone(formal.annual_return);
     const latest = days.at(-1);
+    $('#candidate-active-policy').textContent = '统一 v6';
+    $('#candidate-active-days').textContent =
+      `${num(days.length)} 日`;
+    $('#candidate-latest-signals').textContent =
+      `${num(latest?.early_signal_count || 0)} 只`;
+    $('#candidate-latest-ready').textContent =
+      `${num(latest?.ready_candidate_count || 0)} 只`;
     const initial = (
       latest?.mode === 'live_shadow'
       && latest.quality_selector_active === false
@@ -2047,9 +1998,6 @@
       ['优质多头控制买入',
         DATA.research?.quality_selection?.acceptance?.buy_control_passed
           ? '已通过' : '未通过，仅影子排名'],
-      ['候选账户基线', DATA.candidate_account_comparison?.contract?.baseline_entry],
-      ['候选账户成交', DATA.candidate_account_comparison?.contract?.fill],
-      ['跌信号退出', DATA.candidate_account_comparison?.contract?.weak_short_exit_included ? '已包含' : '未包含'],
       ['历史收益契约', DATA.history?.return_contract],
       ['实盘模拟契约', DATA.paper?.contract],
       ['分钟引擎', DATA.intraday_replay?.engine_version],
@@ -2072,8 +2020,6 @@
       signal_quality: '全天信号质量',
       quality_selection: '优质多头影子筛选',
       winner_shadow: '即时影子',
-      daily_candidates: '机会观察池',
-      candidate_accounts: '候选账户对照',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
