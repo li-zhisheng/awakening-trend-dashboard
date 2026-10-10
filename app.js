@@ -276,8 +276,10 @@
     $('#candidate-prev').disabled = index <= 0;
     $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
     $('#candidate-date-status').textContent = day
-      ? `${day.date} · ${day.mode === 'live_shadow'
-        ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
+      ? `${day.date} · ${day.mode === 'live_shadow_unavailable'
+        ? '旧版影子记录 · 当前口径未开放'
+        : day.mode === 'live_shadow'
+          ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
         : day.mode === 'historical_quality'
           ? '历史质量回放'
           : '交易日样本'}`
@@ -295,14 +297,20 @@
             ? `质量门历史回放 · 全部 ${num(allRows.length)}`
             : `不可买 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
       kpi('首次多头候选', `${num(day?.early_signal_count || 0)} 只`,
-        day?.mode === 'live_shadow'
+        day?.mode === 'live_shadow_unavailable'
+          ? '仅保留旧版观察计数，不回填当前候选'
+          : day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
           ? '首次出现即记录源时间与价格'
           : '历史回放覆盖全天四个时段'),
       kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
-        '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
+        day?.mode === 'live_shadow_unavailable'
+          ? '旧策略与当前质量规则不可比'
+          : '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
-        day?.mode === 'live_shadow'
+        day?.mode === 'live_shadow_unavailable'
+          ? '旧版影子扫描批次'
+          : day?.mode === 'live_shadow'
           ? '同一扫描分钟横向比较'
           : '同一5分钟横向比较'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
@@ -390,7 +398,9 @@
     }).join('') : emptyRow(
       22,
       day
-        ? candidateScope === 'buyable'
+        ? day.mode === 'live_shadow_unavailable'
+          ? '该日为旧版影子口径，当前机会规则未开放；未回填或伪造候选'
+          : candidateScope === 'buyable'
           ? '当日没有满足动态买入条件的股票'
           : '当日没有股票进入观察池'
         : '该日期没有交易日样本',
