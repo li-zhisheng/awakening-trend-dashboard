@@ -1193,23 +1193,48 @@
     const hasAverage = averagePrices.some(value =>
       Number.isFinite(value));
     const hasVolume = volumes.some(value => value > 0);
-    const marks = [...(rawMarks || [])];
-    if (!marks.some(mark => Number(mark[1]) === 1)) {
-      const candidate = candidateDays()
-        .find(item => item.date === date)?.candidates
-        ?.find(item => item.selection?.code === state.code);
-      if (candidate) {
-        const selection = candidate.selection;
-        let index = points.findIndex(
-          point => point[0] === selection.signal_time);
-        if (index < 0) {
-          index = points.findIndex(
-            point => point[0] > selection.signal_time);
+    const candidate = candidateDays()
+      .find(item => item.date === date)?.candidates
+      ?.find(item => item.selection?.code === state.code);
+    const marks = [...(rawMarks || [])].filter(mark =>
+      !(candidate && Number(mark[1]) === 1));
+    if (candidate) {
+      const selection = candidate.selection;
+      let signalIndex = points.findIndex(
+        point => point[0] === selection.signal_time);
+      if (signalIndex < 0) {
+        signalIndex = points.findIndex(
+          point => point[0] > selection.signal_time);
+      }
+      if (signalIndex >= 0) {
+        marks.push([
+          points[signalIndex][0], 1, selection.strength,
+          selection.retention_probability,
+          Number(selection.signal_price) || prices[signalIndex],
+          'first_long',
+        ]);
+      }
+      const outcome = candidate.evaluation || {};
+      const entryTime = (
+        selection.strategy_entry_time || outcome.entry_time);
+      const entryPrice = Number(
+        selection.strategy_entry_price || outcome.entry_price);
+      if (
+        selection.entry_ready === true
+        && entryTime
+        && Number.isFinite(entryPrice)
+      ) {
+        let entryIndex = points.findIndex(
+          point => point[0] === entryTime);
+        if (entryIndex < 0) {
+          entryIndex = points.findIndex(
+            point => point[0] > entryTime);
         }
-        if (index >= 0) {
+        if (entryIndex >= 0) {
           marks.push([
-            points[index][0], 1, selection.strength,
-            selection.retention_probability, prices[index],
+            points[entryIndex][0], 1, 'strong',
+            selection.retention_probability,
+            entryPrice, 'strategy_buy',
           ]);
         }
       }
@@ -1221,12 +1246,23 @@
     const markPoints = marks.map(mark => {
       const time = clock(mark[0]);
       const index = times.indexOf(time);
+      if (index < 0) return null;
       const long = Number(mark[1]) === 1;
       const weak = mark[2] === 'weak';
-      const label = signalLabel(mark[1], mark[2]);
+      const kind = mark[5] || 'formula_signal';
+      const firstLong = kind === 'first_long';
+      const strategyBuy = kind === 'strategy_buy';
+      const label = (
+        firstLong ? '首次多'
+        : strategyBuy ? '买点'
+        : signalLabel(mark[1], mark[2]));
       const price = Number(mark[4]);
       const change = (price / previousClose - 1) * 100;
-      const color = long
+      const color = firstLong
+        ? '#e5b94f'
+        : strategyBuy
+          ? '#ef6666'
+          : long
         ? (weak ? signalColors.weakLong : signalColors.strongLong)
         : (weak ? signalColors.weakShort : signalColors.strongShort);
       const changeText =
@@ -1235,31 +1271,36 @@
         name: label,
         coord: [index, price],
         value: `${label} ${changeText}`,
-        symbol: 'circle',
-        symbolSize: weak ? 12 : 16,
-        symbolOffset: [0, long ? '-55%' : '55%'],
+        symbol: strategyBuy ? 'diamond' : 'circle',
+        symbolSize: strategyBuy ? 20 : firstLong ? 17 : weak ? 12 : 16,
+        symbolOffset: [
+          0,
+          strategyBuy ? '55%' : long ? '-55%' : '55%',
+        ],
         itemStyle: {
           color,
           borderColor: '#101619',
-          borderWidth: weak ? 1 : 2,
+          borderWidth: strategyBuy || firstLong ? 2 : weak ? 1 : 2,
         },
         label: {
           show: true,
-          position: long ? 'top' : 'bottom',
-          distance: weak ? 16 : 22,
+          position: strategyBuy ? 'bottom' : long ? 'top' : 'bottom',
+          distance: strategyBuy || firstLong ? 22 : weak ? 16 : 22,
           color,
           backgroundColor: 'rgba(13,17,20,.92)',
           borderColor: color,
           borderWidth: 1,
           borderRadius: 3,
           padding: [3, 5],
-          fontSize: weak ? 9 : 10,
+          fontSize: strategyBuy || firstLong ? 10 : weak ? 9 : 10,
           lineHeight: 14,
           fontWeight: 700,
-          formatter: `${label} ${changeText}\n${price.toFixed(2)}`,
+          formatter: (
+            `${label} ${time}\n`
+            + `¥${price.toFixed(2)} ${changeText}`),
         },
       };
-    });
+    }).filter(Boolean);
     const ticks = (index, value) =>
       index === 0 || index === times.length - 1
       || ['10:30', '11:30', '14:00', '15:00'].includes(value);
@@ -1404,7 +1445,12 @@
     });
     instance?.off('click');
     const labels = marks.map(mark => {
-      return `${clock(mark[0])} ${signalLabel(mark[1], mark[2])}`;
+      const kind = mark[5] || 'formula_signal';
+      const label = (
+        kind === 'first_long' ? '首次多'
+        : kind === 'strategy_buy' ? '买点'
+        : signalLabel(mark[1], mark[2]));
+      return `${clock(mark[0])} ${label}`;
     });
     $('#stock-market-status').textContent =
       `${date} 前复权${frequency || '分时'} · ${source || '历史行情'} · 昨收 ${num(previousClose, 2)}`
@@ -1413,6 +1459,7 @@
         : auction?.status === 'not_in_watch_pool'
           ? ' · 未纳入竞价观察池'
           : '')
+      + (candidate ? ' · 黄=首次多 · 红=策略买点' : '')
       + (labels.length ? ` · ${labels.join(' · ')}` : '');
   }
 
