@@ -278,8 +278,8 @@
     $('#candidate-date-status').textContent = day
       ? `${day.date} · ${day.mode === 'live_shadow'
         ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
-        : day.mode === 'historical_quality'
-          ? '历史质量回放'
+        : day.mode === 'historical_v6_backtest'
+          ? 'v6历史回测 · 下一根5分钟确认代理'
           : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
@@ -291,14 +291,14 @@
         `${num(buyableRows.length)} 只`,
         dynamicEntry
           ? `等待回落 ${num(day?.wait_pullback_count || 0)} · 全部观察 ${num(allRows.length)}`
-          : day?.mode === 'historical_quality'
-            ? `质量门历史回放 · 全部 ${num(allRows.length)}`
+          : day?.mode === 'historical_v6_backtest'
+            ? `历史确认 ${num(buyableRows.length)} · 全部信号 ${num(allRows.length)}`
             : `不可买 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
       kpi('首次多头候选', `${num(day?.early_signal_count || 0)} 只`,
         day?.mode === 'live_shadow'
           && day.cadence === 'one_minute'
           ? '首次出现即记录源时间与价格'
-          : '历史回放覆盖全天四个时段'),
+          : '09:30–10:00 全市场因果回放'),
       kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
         '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
@@ -328,11 +328,16 @@
       live_wait_pullback: '等待回落',
       live_ready_shadow: '回落/走势企稳，仅影子就绪',
       live_invalidated: '当前失效',
+      historical_complete: '历史确认，事后验证完成',
+      historical_censored: '历史确认，后续样本不足',
+      historical_signal_disappeared: '多点出现，确认前消失',
+      historical_ranked_out: '多点出现，当日排序未保留',
     };
     const entryPlanLabel = {
       stabilize_then_rank: '观察企稳后排序',
       pullback_then_stabilize: '等待回落企稳',
       reject_high_signal: '首点>5%永久不可买',
+      historical_next_5m_confirmation: '下一根5分钟确认',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
       <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th>
@@ -349,8 +354,7 @@
         ? dt(selection.signal_at).split(' ')[1]
         : clock(selection.signal_time);
       const signalPrice = (
-        selection.live_shadow
-        && Number.isFinite(Number(selection.signal_price))
+        Number.isFinite(Number(selection.signal_price))
       ) ? `<br><small>¥${num(selection.signal_price, 2)}</small>` : '';
       const outcomeStatus = statusLabel[outcome.status] || outcome.status;
       const displayStatus = (
@@ -361,6 +365,11 @@
       const entryPlan = entryPlanLabel[selection.entry_plan] || '—';
       const statusAt = selection.entry_status_at
         ? dt(selection.entry_status_at).split(' ')[1] : '';
+      const entryPrice = Number.isFinite(Number(outcome.entry_price))
+        ? ` ¥${num(outcome.entry_price, 2)}` : '';
+      const entryEvidence = outcome.entry_time
+        ? `<br><small>${clock(outcome.entry_time)}${entryPrice}</small>`
+        : statusAt ? `<br><small>${esc(statusAt)}</small>` : '';
       return `<tr><td>${esc(signalTime)}${signalPrice}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
@@ -382,7 +391,7 @@
         <td class="${tone(selection.current_return)}">${selection.current_return == null ? '—' : pct(selection.current_return)}</td>
         <td class="${tone(selection.pullback_from_peak == null ? null : -selection.pullback_from_peak)}">${selection.pullback_from_peak == null ? '—' : pct(-selection.pullback_from_peak)}</td>
         <td>${selection.stable_observations == null ? '—' : num(selection.stable_observations)}</td>
-        <td>${esc(entryPlan)}${statusAt ? `<br><small>${esc(statusAt)}</small>` : ''}</td>
+        <td>${esc(entryPlan)}${entryEvidence}</td>
         <td>${esc(displayStatus)}</td>
         <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
@@ -2020,6 +2029,7 @@
       signal_quality: '全天信号质量',
       quality_selection: '优质多头影子筛选',
       winner_shadow: '即时影子',
+      candidate_history: 'v6历史机会',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
