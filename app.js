@@ -67,7 +67,17 @@
       try {
         const response = await fetch(path, { cache: 'no-store' });
         if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-        return await response.json();
+        if (!path.endsWith('.gz')) return await response.json();
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
+          return JSON.parse(new TextDecoder().decode(bytes));
+        }
+        if (typeof DecompressionStream !== 'function') {
+          throw new Error('浏览器不支持gzip分钟归档');
+        }
+        const stream = new Blob([bytes]).stream()
+          .pipeThrough(new DecompressionStream('gzip'));
+        return await new Response(stream).json();
       } catch (exc) {
         error = exc;
       }
@@ -782,6 +792,7 @@
     const compact = String(date || '').replaceAll('-', '');
     if (!base || !/^\d{8}$/.test(compact)) return null;
     const payload = await loadFirst([
+      `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json.gz`,
       `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json`,
     ]);
     return parseArchivedMinute(payload, code, date, daily);
