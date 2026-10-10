@@ -708,6 +708,15 @@
 
   function parseArchivedMinute(payload, code, date, daily) {
     const compact = String(date || '').replaceAll('-', '');
+    if (payload?.schema === 'awakening-minute-archive-month-v1') {
+      if (
+        payload.code !== code
+        || payload.month !== compact.slice(0, 6)
+      ) {
+        throw new Error('SuperMind月度分钟归档不匹配');
+      }
+      payload = (payload.days || []).find(day => day.date === compact);
+    }
     if (
       payload?.schema !== 'awakening-minute-archive-stock-v1'
       || payload.code !== code
@@ -768,6 +777,7 @@
     const compact = String(date || '').replaceAll('-', '');
     if (!base || !/^\d{8}$/.test(compact)) return null;
     const payload = await loadFirst([
+      `${base}/months/${compact.slice(0, 6)}/${code.slice(0, 2)}/${code}.json.gz`,
       `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json.gz`,
       `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json`,
     ]);
