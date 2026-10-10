@@ -882,42 +882,48 @@
   }
 
   function stockDailyMarks(daily) {
-    const build = (rows, strength) => (rows || []).map(item => {
-      const index = Number(item[0]);
-      const direction = Number(item[1]);
-      const probability = Number(item[2]);
+    const makeMark = (
+      index, direction, strength, probability, name = '',
+    ) => {
       const bar = daily.bars[index];
-      if (!bar || ![1, -1].includes(direction)) return null;
-      const long = direction === 1;
+      if (!bar || ![1, -1].includes(Number(direction))) return null;
+      const long = Number(direction) === 1;
       const strong = strength === 'strong';
       const label = signalLabel(direction, strength);
       const color = long
         ? (strong ? signalColors.strongLong : signalColors.weakLong)
         : (strong ? signalColors.strongShort : signalColors.weakShort);
       return {
-        name: label,
-        direction,
+        name: name || label,
+        direction: Number(direction),
         strength,
         coord: [index, long ? Number(bar[3]) : Number(bar[2])],
         value: label,
         symbol: 'circle',
-        symbolSize: strong ? 28 : 22,
-        symbolOffset: [0, long ? '68%' : '-68%'],
+        symbolSize: strong ? 36 : 30,
+        symbolOffset: [0, long ? '72%' : '-72%'],
         itemStyle: {
           color,
           borderColor: '#101619',
-          borderWidth: strong ? 2 : 1,
-          opacity: strong ? 1 : .9,
+          borderWidth: strong ? 3 : 2,
+          opacity: 1,
         },
         label: {
           show: true,
           color: '#ffffff',
-          fontSize: strong ? 11 : 9,
+          fontSize: strong ? 12 : 10,
+          lineHeight: strong ? 16 : 14,
           fontWeight: 700,
           formatter: label,
         },
         probability,
       };
+    };
+    const build = (rows, strength) => (rows || []).map(item => {
+      const index = Number(item[0]);
+      const direction = Number(item[1]);
+      const probability = Number(item[2]);
+      return makeMark(index, direction, strength, probability);
     }).filter(Boolean);
     const result = [
       ...build(daily.signals, 'strong'),
@@ -927,29 +933,11 @@
     for (const signal of daily.liveSignals || []) {
       const index = dates.indexOf(signal.date);
       if (index < 0) continue;
-      const bar = daily.bars[index];
-      const long = signal.direction === 1;
-      const strong = signal.strength === 'strong';
       const label = signalLabel(signal.direction, signal.strength);
-      result.push({
-        name: `盘中首${label}`,
-        direction: signal.direction,
-        strength: signal.strength,
-        coord: [index, long ? Number(bar[3]) : Number(bar[2])],
-        value: label,
-        symbol: 'diamond',
-        symbolSize: 22,
-        itemStyle: {
-          color: long
-            ? (strong ? signalColors.strongLong : signalColors.weakLong)
-            : (strong ? signalColors.strongShort : signalColors.weakShort),
-          borderColor: '#101619', borderWidth: 2,
-        },
-        label: {
-          show: true, color: '#ffffff', fontSize: 9,
-          fontWeight: 700, formatter: label,
-        },
-      });
+      const mark = makeMark(
+        index, signal.direction, signal.strength,
+        signal.probability, `盘中首${label}`);
+      if (mark) result.push(mark);
     }
     const existingLongDates = new Set(
       result.filter(mark => Number(mark.direction) === 1)
@@ -963,28 +951,11 @@
         ) continue;
         const index = dates.indexOf(day.date);
         if (index < 0) continue;
-        const bar = daily.bars[index];
-        const strong = selection.strength === 'strong';
         const label = signalLabel(1, selection.strength);
-        result.push({
-          name: `待定${label}`,
-          direction: 1,
-          strength: selection.strength,
-          coord: [index, Number(bar[3])],
-          value: label,
-          symbol: 'pin',
-          symbolSize: 28,
-          symbolOffset: [0, '60%'],
-          itemStyle: {
-            color: strong
-              ? signalColors.strongLong : signalColors.weakLong,
-            borderColor: '#101619', borderWidth: 1,
-          },
-          label: {
-            show: true, color: '#ffffff', fontSize: 9,
-            fontWeight: 700, formatter: label,
-          },
-        });
+        const mark = makeMark(
+          index, 1, selection.strength,
+          selection.retention_probability, `机会${label}`);
+        if (mark) result.push(mark);
         existingLongDates.add(day.date);
       }
     }
