@@ -65,7 +65,13 @@
     let error = null;
     for (const path of paths) {
       try {
-        const response = await fetch(path, { cache: 'no-store' });
+        const immutableArchive = (
+          path.includes('/awakening-minute-archive/')
+          && path.endsWith('.json.gz')
+        );
+        const response = await fetch(path, {
+          cache: immutableArchive ? 'force-cache' : 'no-store',
+        });
         if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
         if (!path.endsWith('.gz')) return await response.json();
         const bytes = new Uint8Array(await response.arrayBuffer());
