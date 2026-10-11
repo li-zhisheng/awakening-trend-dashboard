@@ -181,13 +181,13 @@
     const months = original ? originalMonthly : v6Monthly;
     const strategy = DATA.v6_monthly?.strategy || {};
     $('#monthly-chart-note').textContent = original
-      ? '原始多空 · SuperMind真实1分钟 · 冲高回落尾盘竞价规则'
+      ? '盘后确认信号的1分钟回放 · 存在未来信息偏差，收益仅供历史研究'
       : `V6稳定买入与首次空点卖出 · ${num(strategy.slots)}槽`;
     $('#monthly-nav-note').textContent = original
       ? '原始多空一分钟逐月复合路径'
       : 'V6四槽逐月复合路径';
     $('#monthly-table-note').textContent = original
-      ? '一分钟多空成交、规则卖出和月末持仓'
+      ? '盘后确认信号回放 · 规则卖出和月末持仓 · 非实盘收益'
       : '当前V6 · 一分钟稳定买入 · 首次空点卖出';
     chart('monthly-chart', {
       animation: false,
