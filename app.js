@@ -1996,20 +1996,27 @@
     }).join('') : emptyRow(9, '尚未形成今日首批信号')}</tbody>`;
     const accounts = (PAPER?.stocks || []).filter(row =>
       row.quantity || row.status !== 'cash' || row.net_pnl);
-    $('#paper-stocks').innerHTML = `<thead><tr><th>代码</th><th>名称</th><th>状态</th><th>数量</th><th>标记价</th><th>市值</th><th>浮动盈亏</th><th>净盈亏</th></tr></thead>
+    const defaultExitRuleLabel = (
+      PAPER?.exit_policy?.[0]?.label
+      || DATA.paper?.exit_policy?.[0]?.label
+      || '—'
+    );
+    $('#paper-stocks').innerHTML = `<thead><tr><th>代码</th><th>名称</th><th>状态</th><th>规则</th><th>数量</th><th>标记价</th><th>市值</th><th>浮动盈亏</th><th>净盈亏</th></tr></thead>
       <tbody>${accounts.length ? accounts.map(row => `<tr><td>${stockLink(row.code, row.code, 'paper-stock-link')}</td><td>${stockLink(row.code, row.name, 'paper-stock-link')}</td><td>${esc(row.status)}</td>
+      <td>${esc(row.exit_rule || defaultExitRuleLabel)}</td>
       <td>${num(row.quantity)}</td><td>${num(row.mark_price, 2)}</td><td>${cny(row.market_value)}</td>
-      <td class="${tone(row.unrealized_pnl)}">${cny(row.unrealized_pnl)}</td><td class="${tone(row.net_pnl)}">${cny(row.net_pnl)}</td></tr>`).join('') : emptyRow(8, '当前无持仓或异常账户')}</tbody>`;
+      <td class="${tone(row.unrealized_pnl)}">${cny(row.unrealized_pnl)}</td><td class="${tone(row.net_pnl)}">${cny(row.net_pnl)}</td></tr>`).join('') : emptyRow(9, '当前无持仓或异常账户')}</tbody>`;
     const fills = PAPER?.recent_fills || [];
-    $('#paper-fills').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>方向</th><th>价格</th><th>数量</th><th>盈亏</th></tr></thead>
+    $('#paper-fills').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>方向</th><th>规则</th><th>价格</th><th>数量</th><th>盈亏</th></tr></thead>
       <tbody>${fills.length ? fills.map(row => `<tr><td>${dt(row.quote_at)}</td><td>${stockLink(row.code, `${row.code} ${row.name || ''}`.trim(), 'paper-stock-link')}</td>
-      <td class="${row.side === 'buy' ? 'up' : 'down'}">${row.side === 'buy' ? '买入' : '卖出'}</td><td>${num(row.price, 2)}</td><td>${num(row.quantity)}</td>
-      <td class="${tone(row.pnl)}">${cny(row.pnl)}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
+      <td class="${row.side === 'buy' ? 'up' : 'down'}">${row.side === 'buy' ? '买入' : '卖出'}</td><td>${esc(row.rule_label || (row.side === 'sell' ? '空点卖出' : '多点买入'))}</td><td>${num(row.price, 2)}</td><td>${num(row.quantity)}</td>
+      <td class="${tone(row.pnl)}">${cny(row.pnl)}</td></tr>`).join('') : emptyRow(7)}</tbody>`;
     const signals = PAPER?.recent_signals || [];
-    $('#paper-signals').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>信号</th><th>状态</th><th>原因</th></tr></thead>
+    $('#paper-signals').innerHTML = `<thead><tr><th>时间</th><th>股票</th><th>信号</th><th>规则</th><th>状态</th><th>原因</th></tr></thead>
       <tbody>${signals.length ? signals.map(row => `<tr><td>${dt(row.observed_at)}</td><td>${stockLink(row.code, `${row.code} ${row.name || ''}`.trim(), 'paper-stock-link')}</td>
       <td class="${row.direction === 'LONG' ? 'up' : 'down'}">${signalLabel(row.direction, row.strength)}</td>
-      <td>${esc(row.status)}</td><td>${esc(row.reason)}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
+      <td>${esc(row.rule_label || (row.direction === 'SHORT' ? '空点卖出' : '多点买入'))}</td>
+      <td>${esc(row.status)}</td><td>${esc(row.reason)}</td></tr>`).join('') : emptyRow(6)}</tbody>`;
     document.querySelectorAll('.paper-stock-link').forEach(button => {
       button.addEventListener(
         'click', () => openStock(button.dataset.code));
