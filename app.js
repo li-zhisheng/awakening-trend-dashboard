@@ -7,6 +7,7 @@
   let stockPage = 1;
   let candidateScope = 'buyable';
   let monthlyStrategy = 'original';
+  let dailyReturnMonth = '';
   const pageSize = 80;
   const charts = new Map();
   const stockDetailCache = new Map();
@@ -175,25 +176,24 @@
 
   function renderMonthlyOverview() {
     const original = monthlyStrategy === 'original';
-    const strongMonthly = DATA.history.monthly || [];
-    const weakMonthly = DATA.weak_signal_comparison?.monthly || [];
+    const originalMonthly = DATA.history.monthly || [];
     const v6Monthly = DATA.v6_monthly?.monthly || [];
-    const months = original ? strongMonthly : v6Monthly;
+    const months = original ? originalMonthly : v6Monthly;
     const strategy = DATA.v6_monthly?.strategy || {};
     $('#monthly-chart-note').textContent = original
-      ? '强信号与强弱全部参与对比'
+      ? '原始多空 · SuperMind真实1分钟 · 冲高回落尾盘竞价规则'
       : `V6稳定买入与首次空点卖出 · ${num(strategy.slots)}槽`;
     $('#monthly-nav-note').textContent = original
-      ? '强信号逐月复合路径'
+      ? '原始多空一分钟逐月复合路径'
       : 'V6四槽逐月复合路径';
     $('#monthly-table-note').textContent = original
-      ? '收益、信号、交易和月末持仓'
+      ? '一分钟多空成交、规则卖出和月末持仓'
       : '当前V6 · 一分钟稳定买入 · 首次空点卖出';
     chart('monthly-chart', {
       animation: false,
       tooltip: { trigger: 'axis', valueFormatter: (v) => pct(v) },
       legend: {
-        data: original ? ['强信号', '强弱全部'] : ['V6策略'],
+        data: original ? ['原始多空（1分钟）'] : ['V6策略'],
         textStyle: { color: '#aab8bd' },
       },
       grid: { left: 52, right: 18, top: 44, bottom: 36 },
@@ -205,18 +205,11 @@
         ...axisBase(), type: 'value',
         axisLabel: { formatter: v => `${(v * 100).toFixed(0)}%` },
       },
-      series: original ? [
-        {
-          name: '强信号', type: 'bar',
-          data: strongMonthly.map(x => x.return),
-          itemStyle: { color: '#78a8e8' },
-        },
-        {
-          name: '强弱全部', type: 'bar',
-          data: weakMonthly.map(x => x.strong_plus_weak_return),
-          itemStyle: { color: '#55c5c7' },
-        },
-      ] : [{
+      series: original ? [{
+        name: '原始多空（1分钟）', type: 'bar',
+        data: originalMonthly.map(x => x.return),
+        itemStyle: { color: '#55c5c7' },
+      }] : [{
         name: 'V6策略', type: 'bar',
         data: v6Monthly.map(x => x.return),
         itemStyle: { color: '#ef6666' },
@@ -253,37 +246,65 @@
         <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
         <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
         <td>${num(row.holdings_end)}</td></tr>`).join('')}</tbody>`;
+      $('#daily-return-panel').hidden = true;
       return;
     }
+    $('#daily-return-panel').hidden = false;
     $('#monthly-table').innerHTML = `<thead><tr>
-      <th>月份</th><th>强信号收益</th><th>强弱全部</th><th>增量</th>
-      <th>买入</th><th>卖出</th><th>多头信号</th><th>空头信号</th><th>月末持仓</th>
-    </tr></thead><tbody>${strongMonthly.map((row, index) => {
-      const compare = weakMonthly[index] || {};
+      <th>月份</th><th>月收益</th><th>累计收益</th><th>月盈亏</th>
+      <th>买入</th><th>卖出</th><th>规则卖出</th>
+      <th>多头信号</th><th>空头信号</th><th>月末持仓</th>
+    </tr></thead><tbody>${originalMonthly.map(row => {
       return `<tr><td>${esc(row.month)}</td>
         <td class="${tone(row.return)}">${pct(row.return)}</td>
-        <td class="${tone(compare.strong_plus_weak_return)}">${pct(compare.strong_plus_weak_return)}</td>
-        <td class="${tone(compare.delta)}">${pct(compare.delta)}</td>
+        <td class="${tone(row.cumulative_return)}">${pct(row.cumulative_return)}</td>
+        <td class="${tone(row.profit_cny)}">${cny(row.profit_cny)}</td>
         <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
+        <td>${num(row.rule_sells)}</td>
         <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
         <td>${num(row.holdings_end)}</td></tr>`;
     }).join('')}</tbody>`;
+    renderDailyReturns();
+  }
+
+  function renderDailyReturns() {
+    const rows = DATA.history.daily || [];
+    const months = [...new Set(rows.map(row => row.month))].sort();
+    if (!months.includes(dailyReturnMonth)) {
+      dailyReturnMonth = months.at(-1) || '';
+    }
+    const select = $('#daily-return-month');
+    select.innerHTML = months.map(month =>
+      `<option value="${esc(month)}">${esc(month)}</option>`).join('');
+    select.value = dailyReturnMonth;
+    const selected = rows.filter(row => row.month === dailyReturnMonth);
+    $('#daily-return-table').innerHTML = `<thead><tr>
+      <th>交易日</th><th>当日盈亏</th><th>累计收益</th><th>当日盈亏金额</th>
+      <th>买入</th><th>卖出</th><th>规则卖出</th>
+      <th>多头信号</th><th>空头信号</th><th>收盘持仓</th>
+    </tr></thead><tbody>${selected.length ? selected.map(row => `<tr>
+      <td>${esc(row.date)}</td>
+      <td class="${tone(row.return)}">${pct(row.return)}</td>
+      <td class="${tone(row.cumulative_return)}">${pct(row.cumulative_return)}</td>
+      <td class="${tone(row.profit_cny)}">${cny(row.profit_cny)}</td>
+      <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
+      <td>${num(row.rule_sells)}</td>
+      <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
+      <td>${num(row.holdings_end)}</td></tr>`).join('')
+      : emptyRow(10, '暂无交易日明细')}</tbody>`;
   }
 
   function renderOverview() {
     const history = DATA.history;
     const summary = history.summary || {};
-    const weak = DATA.weak_signal_comparison || {};
-    const all = weak.strong_plus_weak || {};
-    const delta = weak.delta || {};
     const paper = DATA.paper?.summary || {};
     $('#overview-kpis').innerHTML = [
-      kpi('强信号年度收益', pct(summary.annual_return),
+      kpi('原始策略年度收益', pct(summary.annual_return),
         `${num(summary.closed_trades)} 笔闭环交易`, tone(summary.annual_return)),
-      kpi('强弱全部年度收益', pct(all.annual_return),
-        `增量 ${pct(delta.annual_return)}`, tone(all.annual_return)),
-      kpi('闭环胜率', pct(all.win_rate),
-        `强信号 ${pct(summary.win_rate)}`),
+      kpi('规则卖出', num(summary.rule_sell_count),
+        '14:56判定 · 15:00尾盘竞价'),
+      kpi('闭环胜率', pct(summary.win_rate),
+        '真实1分钟下一分钟成交'),
       kpi('主板股票', num(history.universe_count),
         `非 ST · 分钟触发完整 ${num(DATA.intraday_replay?.complete_count)}`),
       kpi('实时模拟净盈亏', cny(paper.net_pnl),
@@ -2490,6 +2511,10 @@
     $('#monthly-strategy').addEventListener('change', event => {
       monthlyStrategy = event.target.value;
       renderMonthlyOverview();
+    });
+    $('#daily-return-month').addEventListener('change', event => {
+      dailyReturnMonth = event.target.value;
+      renderDailyReturns();
     });
     $('#stock-prev').addEventListener('click', () => { stockPage -= 1; renderStocks(); });
     $('#stock-next').addEventListener('click', () => { stockPage += 1; renderStocks(); });
