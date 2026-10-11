@@ -1672,8 +1672,8 @@
         },
       },
       grid: hasVolume ? [
-        { left: 58, right: 18, top: 82, height: '46%' },
-        { left: 58, right: 18, top: '76%', height: '11%' },
+        { left: 58, right: 18, top: 82, height: '44%' },
+        { left: 58, right: 18, top: '69%', height: '20%' },
       ] : [
         { left: 58, right: 18, top: 82, bottom: 48 },
       ],
@@ -1751,6 +1751,7 @@
         ...(hasVolume ? [{
           name: '方向成交量', type: 'bar',
           xAxisIndex: 1, yAxisIndex: 1,
+          barCategoryGap: '5%', barMinHeight: 1,
           data: volumes.map((value, index) => ({
             value,
             itemStyle: {
