@@ -1598,7 +1598,7 @@
         $('#stock-market-status').textContent =
           '该股票没有统一归档或腾讯/新浪1分钟数据';
       }
-      return Boolean(dates.length);
+      return Boolean(loadedDates.length);
     } catch (_error) {
       if (stockMarketState === state) {
         $('#stock-market-status').textContent =
