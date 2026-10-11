@@ -41,20 +41,26 @@
       <div class="chart-grid">
         <section class="panel chart-panel">
           <div class="panel-head">
-            <div><h2>月度收益</h2><p>强信号与强弱全部参与对比</p></div>
+            <div><h2>月度收益</h2><p id="monthly-chart-note">强信号与强弱全部参与对比</p></div>
           </div>
           <div id="monthly-chart" class="chart"></div>
         </section>
         <section class="panel chart-panel">
           <div class="panel-head">
-            <div><h2>累计净值</h2><p>强信号逐月复合路径</p></div>
+            <div><h2>累计净值</h2><p id="monthly-nav-note">强信号逐月复合路径</p></div>
           </div>
           <div id="nav-chart" class="chart"></div>
         </section>
       </div>
       <section class="panel">
         <div class="panel-head">
-          <div><h2>月份明细</h2><p>收益、信号、交易和月末持仓</p></div>
+          <div><h2>月份明细</h2><p id="monthly-table-note">收益、信号、交易和月末持仓</p></div>
+          <label class="panel-control">策略
+            <select id="monthly-strategy" aria-label="选择月份收益策略">
+              <option value="original">原始多空策略</option>
+              <option value="v6">V6策略（4槽）</option>
+            </select>
+          </label>
         </div>
         <div class="table-wrap"><table id="monthly-table"></table></div>
       </section>

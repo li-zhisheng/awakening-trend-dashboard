@@ -6,6 +6,7 @@
   let stockMarketState = null;
   let stockPage = 1;
   let candidateScope = 'buyable';
+  let monthlyStrategy = 'original';
   const pageSize = 80;
   const charts = new Map();
   const stockDetailCache = new Map();
@@ -172,6 +173,103 @@
       ? '盘中就绪' : status === 'waiting_market' ? '等待开市' : status;
   }
 
+  function renderMonthlyOverview() {
+    const original = monthlyStrategy === 'original';
+    const strongMonthly = DATA.history.monthly || [];
+    const weakMonthly = DATA.weak_signal_comparison?.monthly || [];
+    const v6Monthly = DATA.v6_monthly?.monthly || [];
+    const months = original ? strongMonthly : v6Monthly;
+    const strategy = DATA.v6_monthly?.strategy || {};
+    $('#monthly-chart-note').textContent = original
+      ? '强信号与强弱全部参与对比'
+      : `V6稳定买入与首次空点卖出 · ${num(strategy.slots)}槽`;
+    $('#monthly-nav-note').textContent = original
+      ? '强信号逐月复合路径'
+      : 'V6四槽逐月复合路径';
+    $('#monthly-table-note').textContent = original
+      ? '收益、信号、交易和月末持仓'
+      : '当前V6 · 一分钟稳定买入 · 首次空点卖出';
+    chart('monthly-chart', {
+      animation: false,
+      tooltip: { trigger: 'axis', valueFormatter: (v) => pct(v) },
+      legend: {
+        data: original ? ['强信号', '强弱全部'] : ['V6策略'],
+        textStyle: { color: '#aab8bd' },
+      },
+      grid: { left: 52, right: 18, top: 44, bottom: 36 },
+      xAxis: {
+        ...axisBase(), type: 'category',
+        data: months.map(x => x.month.slice(5)),
+      },
+      yAxis: {
+        ...axisBase(), type: 'value',
+        axisLabel: { formatter: v => `${(v * 100).toFixed(0)}%` },
+      },
+      series: original ? [
+        {
+          name: '强信号', type: 'bar',
+          data: strongMonthly.map(x => x.return),
+          itemStyle: { color: '#78a8e8' },
+        },
+        {
+          name: '强弱全部', type: 'bar',
+          data: weakMonthly.map(x => x.strong_plus_weak_return),
+          itemStyle: { color: '#55c5c7' },
+        },
+      ] : [{
+        name: 'V6策略', type: 'bar',
+        data: v6Monthly.map(x => x.return),
+        itemStyle: { color: '#ef6666' },
+      }],
+    });
+    chart('nav-chart', {
+      animation: false,
+      tooltip: { trigger: 'axis' },
+      grid: { left: 52, right: 18, top: 26, bottom: 36 },
+      xAxis: {
+        ...axisBase(), type: 'category',
+        data: months.map(x => x.month.slice(5)),
+      },
+      yAxis: {
+        ...axisBase(), type: 'value',
+        axisLabel: { formatter: v => v.toFixed(2) },
+      },
+      series: [{
+        name: '累计净值', type: 'line', smooth: false,
+        data: months.map(x => x.nav),
+        lineStyle: { color: '#e5b94f', width: 2 },
+        itemStyle: { color: '#e5b94f' },
+        areaStyle: { color: 'rgba(229,185,79,.08)' },
+      }],
+    });
+    if (!original) {
+      $('#monthly-table').innerHTML = `<thead><tr>
+        <th>月份</th><th>V6月收益</th><th>累计收益</th>
+        <th>买入</th><th>卖出</th><th>多点</th><th>空点</th><th>月末持仓</th>
+      </tr></thead><tbody>${v6Monthly.map(row => `<tr>
+        <td>${esc(row.month)}</td>
+        <td class="${tone(row.return)}">${pct(row.return)}</td>
+        <td class="${tone(row.cumulative_return)}">${pct(row.cumulative_return)}</td>
+        <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
+        <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
+        <td>${num(row.holdings_end)}</td></tr>`).join('')}</tbody>`;
+      return;
+    }
+    $('#monthly-table').innerHTML = `<thead><tr>
+      <th>月份</th><th>强信号收益</th><th>强弱全部</th><th>增量</th>
+      <th>买入</th><th>卖出</th><th>多头信号</th><th>空头信号</th><th>月末持仓</th>
+    </tr></thead><tbody>${strongMonthly.map((row, index) => {
+      const compare = weakMonthly[index] || {};
+      return `<tr><td>${esc(row.month)}</td>
+        <td class="${tone(row.return)}">${pct(row.return)}</td>
+        <td class="${tone(compare.strong_plus_weak_return)}">${pct(compare.strong_plus_weak_return)}</td>
+        <td class="${tone(compare.delta)}">${pct(compare.delta)}</td>
+        <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
+        <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
+        <td>${num(row.holdings_end)}</td></tr>`;
+    }).join('')}</tbody>`;
+  }
+
   function renderOverview() {
     const history = DATA.history;
     const summary = history.summary || {};
@@ -194,46 +292,7 @@
         `待卖 ${num(paper.pending_exit_count)} 只`),
     ].join('');
 
-    const strongMonthly = history.monthly || [];
-    const weakMonthly = weak.monthly || [];
-    chart('monthly-chart', {
-      animation: false,
-      tooltip: { trigger: 'axis', valueFormatter: (v) => pct(v) },
-      legend: { data: ['强信号', '强弱全部'], textStyle: { color: '#aab8bd' } },
-      grid: { left: 52, right: 18, top: 44, bottom: 36 },
-      xAxis: { ...axisBase(), type: 'category', data: strongMonthly.map(x => x.month.slice(5)) },
-      yAxis: { ...axisBase(), type: 'value', axisLabel: { formatter: v => `${(v * 100).toFixed(0)}%` } },
-      series: [
-        { name: '强信号', type: 'bar', data: strongMonthly.map(x => x.return), itemStyle: { color: '#78a8e8' } },
-        { name: '强弱全部', type: 'bar', data: weakMonthly.map(x => x.strong_plus_weak_return), itemStyle: { color: '#55c5c7' } },
-      ],
-    });
-    chart('nav-chart', {
-      animation: false,
-      tooltip: { trigger: 'axis' },
-      grid: { left: 52, right: 18, top: 26, bottom: 36 },
-      xAxis: { ...axisBase(), type: 'category', data: strongMonthly.map(x => x.month.slice(5)) },
-      yAxis: { ...axisBase(), type: 'value', axisLabel: { formatter: v => v.toFixed(2) } },
-      series: [{
-        name: '累计净值', type: 'line', smooth: false,
-        data: strongMonthly.map(x => x.nav),
-        lineStyle: { color: '#e5b94f', width: 2 },
-        itemStyle: { color: '#e5b94f' }, areaStyle: { color: 'rgba(229,185,79,.08)' },
-      }],
-    });
-    $('#monthly-table').innerHTML = `<thead><tr>
-      <th>月份</th><th>强信号收益</th><th>强弱全部</th><th>增量</th>
-      <th>买入</th><th>卖出</th><th>多头信号</th><th>空头信号</th><th>月末持仓</th>
-    </tr></thead><tbody>${strongMonthly.map((row, index) => {
-      const compare = weakMonthly[index] || {};
-      return `<tr><td>${esc(row.month)}</td>
-        <td class="${tone(row.return)}">${pct(row.return)}</td>
-        <td class="${tone(compare.strong_plus_weak_return)}">${pct(compare.strong_plus_weak_return)}</td>
-        <td class="${tone(compare.delta)}">${pct(compare.delta)}</td>
-        <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
-        <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
-        <td>${num(row.holdings_end)}</td></tr>`;
-    }).join('')}</tbody>`;
+    renderMonthlyOverview();
   }
 
   function candidateDays() {
@@ -2407,6 +2466,10 @@
       document.getElementById(id).addEventListener('input', () => {
         stockPage = 1; renderStocks();
       }));
+    $('#monthly-strategy').addEventListener('change', event => {
+      monthlyStrategy = event.target.value;
+      renderMonthlyOverview();
+    });
     $('#stock-prev').addEventListener('click', () => { stockPage -= 1; renderStocks(); });
     $('#stock-next').addEventListener('click', () => { stockPage += 1; renderStocks(); });
     $('#candidate-date').addEventListener(
