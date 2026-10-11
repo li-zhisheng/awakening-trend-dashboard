@@ -371,7 +371,7 @@
         ? `<br><small>${clock(outcome.entry_time)}${entryPrice}</small>`
         : statusAt ? `<br><small>${esc(statusAt)}</small>` : '';
       return `<tr><td>${esc(signalTime)}${signalPrice}</td>
-        <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}">${esc(selection.code)}</button></td>
+        <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}" data-date="${esc(day.date)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
         <td>${esc(industryName(selection.industry))}</td>
         <td class="up">${signalLabel(1, selection.strength)}</td>
@@ -405,7 +405,8 @@
         : '该日期没有交易日样本',
     )}</tbody>`;
     document.querySelectorAll('.candidate-stock-link').forEach(button => {
-      button.addEventListener('click', () => openStock(button.dataset.code));
+      button.addEventListener('click', () =>
+        openStock(button.dataset.code, button.dataset.date));
     });
   }
 
@@ -891,27 +892,59 @@
       <td>${num(item[3], 2)}</td><td>${esc(item[4])}</td></tr>`).join('') : emptyRow(5)}</tbody>`;
   }
 
+  function stockDailyWindow(dates, selectedDate, visibleBars = 80) {
+    const selectedIndex = dates.indexOf(selectedDate);
+    const startIndex = selectedIndex >= 0
+      ? Math.max(
+        0,
+        Math.min(
+          selectedIndex - Math.floor(visibleBars / 2),
+          Math.max(0, dates.length - visibleBars),
+        ),
+      )
+      : Math.max(0, dates.length - visibleBars);
+    const endIndex = Math.min(
+      dates.length - 1, startIndex + visibleBars - 1);
+    return {
+      start: dates.length
+        ? (startIndex / dates.length) * 100 : 0,
+      end: dates.length
+        ? ((endIndex + 1) / dates.length) * 100 : 100,
+    };
+  }
+
   function stockDailyMarks(daily) {
     const makeMark = (
       index, direction, strength, probability, name = '',
+      kind = 'formula_signal', price = null,
     ) => {
       const bar = daily.bars[index];
       if (!bar || ![1, -1].includes(Number(direction))) return null;
       const long = Number(direction) === 1;
       const strong = strength === 'strong';
-      const label = signalLabel(direction, strength);
-      const color = long
+      const strategyBuy = kind === 'strategy_buy';
+      const label = strategyBuy
+        ? '买点' : signalLabel(direction, strength);
+      const color = strategyBuy
+        ? '#ef6666'
+        : long
         ? (strong ? signalColors.strongLong : signalColors.weakLong)
         : (strong ? signalColors.strongShort : signalColors.weakShort);
+      const markerPrice = (
+        strategyBuy && Number.isFinite(Number(price))
+      ) ? Number(price) : long ? Number(bar[3]) : Number(bar[2]);
       return {
         name: name || label,
         direction: Number(direction),
         strength,
-        coord: [index, long ? Number(bar[3]) : Number(bar[2])],
+        kind,
+        coord: [index, markerPrice],
         value: label,
-        symbol: 'circle',
-        symbolSize: 36,
-        symbolOffset: [0, long ? '72%' : '-72%'],
+        symbol: strategyBuy ? 'diamond' : 'circle',
+        symbolSize: strategyBuy ? 30 : 36,
+        symbolOffset: [
+          0, strategyBuy ? '-82%' : long ? '72%' : '-72%',
+        ],
         itemStyle: {
           color,
           borderColor: '#101619',
@@ -957,16 +990,30 @@
         const selection = item.selection || {};
         if (
           selection.code !== stockMarketState?.code
-          || existingLongDates.has(day.date)
         ) continue;
         const index = dates.indexOf(day.date);
         if (index < 0) continue;
-        const label = signalLabel(1, selection.strength);
-        const mark = makeMark(
-          index, 1, selection.strength,
-          selection.retention_probability, `机会${label}`);
-        if (mark) result.push(mark);
-        existingLongDates.add(day.date);
+        if (!existingLongDates.has(day.date)) {
+          const label = signalLabel(1, selection.strength);
+          const mark = makeMark(
+            index, 1, selection.strength,
+            selection.retention_probability, `机会${label}`);
+          if (mark) result.push(mark);
+          existingLongDates.add(day.date);
+        }
+        const entryPrice = Number(
+          selection.strategy_entry_price
+          || item.evaluation?.entry_price);
+        if (
+          selection.entry_ready === true
+          && Number.isFinite(entryPrice)
+        ) {
+          const buy = makeMark(
+            index, 1, 'strong',
+            selection.retention_probability,
+            '策略买点', 'strategy_buy', entryPrice);
+          if (buy) result.push(buy);
+        }
       }
     }
     return result;
@@ -983,7 +1030,8 @@
     const ma10 = movingAverage(closes, 10);
     const ma20 = movingAverage(closes, 20);
     const marks = stockDailyMarks(daily);
-    const start = Math.max(0, 100 - (80 / bars.length) * 100);
+    const { start, end } = stockDailyWindow(
+      dates, state.date);
     const instance = chart('stock-detail-chart', {
       animation: false,
       legend: {
@@ -1044,10 +1092,10 @@
         },
       ],
       dataZoom: [
-        { type: 'inside', xAxisIndex: [0, 1], start, end: 100 },
+        { type: 'inside', xAxisIndex: [0, 1], start, end },
         {
           type: 'slider', xAxisIndex: [0, 1],
-          height: 18, bottom: 2, start, end: 100,
+          height: 18, bottom: 2, start, end,
           borderColor: '#344149',
           backgroundColor: '#101619',
           fillerColor: 'rgba(85,197,199,.12)',
@@ -1110,11 +1158,14 @@
       if (!day) return;
       openStockMinuteDate(day);
     });
-    const strong = marks.filter(mark =>
+    const signalMarks = marks.filter(mark =>
+      mark.kind !== 'strategy_buy');
+    const strong = signalMarks.filter(mark =>
       mark.strength === 'strong').length;
-    const weak = marks.length - strong;
+    const weak = signalMarks.length - strong;
+    const buys = marks.length - signalMarks.length;
     $('#stock-market-status').textContent =
-      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 多/空 ${strong} · 涨/跌 ${weak} · 点击K线查看对应日期分时（仅真实1分钟留存日可用）`;
+      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 策略买点 ${buys} · 点击K线查看对应日期分时（仅真实1分钟留存日可用）`;
   }
 
   function renderStockMinute() {
@@ -1552,7 +1603,7 @@
       charts.get('stock-detail-chart')?.resize());
   }
 
-  async function openStock(code) {
+  async function openStock(code, requestedDate = '') {
     const row = (DATA.stock_summary || []).find(
       item => item.code === code);
     if (!row) return;
@@ -1566,7 +1617,7 @@
     stockMarketState = {
       code, name: row.name, daily: null, minute: null,
       minutePromise: null, minuteByDate: new Map(),
-      view: 'daily', date: '',
+      view: 'daily', date: requestedDate,
     };
     $('#stock-market-status').textContent = '正在读取日K';
     $('#stock-minute-date').innerHTML = '';
@@ -1596,7 +1647,11 @@
         '日K数据不可用；可尝试查看腾讯/新浪1分钟行情';
       return;
     }
-    if (stockMarketState === state) setStockMarketView('daily');
+    if (stockMarketState !== state) return;
+    await setStockMarketView('daily');
+    if (requestedDate && stockMarketState === state) {
+      await openStockMinuteDate(requestedDate);
+    }
   }
 
   function renderPaper() {
