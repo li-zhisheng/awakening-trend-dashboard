@@ -1698,6 +1698,12 @@
     const septemberSelection =
       qualitySelection.results?.september_5d?.selected || {};
     const secondExit = research.second_entry_exit || {};
+    const v6Exit = research.v6_exit || {};
+    const v6Shadow = v6Exit.selection?.posthoc_shadow_candidate;
+    const v6BaselineFull =
+      v6Exit.full_period?.raw_short_v6?.portfolio || {};
+    const v6ShadowFull =
+      v6Exit.full_period?.[v6Shadow]?.portfolio || {};
     const secondRule = secondExit.second_entry?.selected;
     const secondHeldout =
       secondExit.second_entry?.results?.heldout?.[secondRule] || {};
@@ -1747,6 +1753,10 @@
         exitAccepted ? '通过' : '仅影子',
         '无规则同时通过训练与全部样本外',
         exitAccepted ? 'up' : 'down'),
+      kpi('V6研究资金收益',
+        pct(v6BaselineFull.period_return),
+        `-3%止损影子 ${pct(v6ShadowFull.period_return)}`,
+        tone(v6BaselineFull.period_return)),
       kpi('提前空点配对改善', pct(early.paired_improvement), `${num(early.stocks)} 只股票`, tone(early.paired_improvement)),
       kpi('提前空点胜率', pct(early.early_trade_win_rate), `原空点 ${pct(early.base_trade_win_rate)}`),
       kpi('赢家画像大涨股', num(staged.return_winner_count), `V2 ${num(compare.return_winner_count)}`),
@@ -1918,6 +1928,51 @@
       <th>提前卖出规则</th><th>1-4月</th><th>5-6月</th>
       <th>7-8月</th><th>9月</th><th>7-8月触发</th><th>结论</th>
       </tr></thead><tbody>${exitRows || emptyRow(7)}</tbody>`;
+
+    const v6Splits = [
+      ['train', '1-4月训练'],
+      ['validation', '5-6月验证'],
+      ['heldout', '7-8月留出'],
+      ['final_holdout', '9月最终留出'],
+    ];
+    const v6Rows = v6Splits.map(([key, label]) => {
+      const base =
+        v6Exit.results?.[key]?.raw_short_v6?.portfolio || {};
+      const shadow =
+        v6Exit.results?.[key]?.[v6Shadow]?.portfolio || {};
+      const delta = Number(shadow.period_return)
+        - Number(base.period_return);
+      return `<tr><td>${esc(label)}</td>
+        <td class="${tone(base.period_return)}">${pct(base.period_return)}</td>
+        <td class="${tone(shadow.period_return)}">${pct(shadow.period_return)}</td>
+        <td class="${tone(delta)}">${pct(delta)}</td>
+        <td class="down">${pct(base.max_drawdown)}</td>
+        <td class="down">${pct(shadow.max_drawdown)}</td>
+        <td>${num(shadow.exit_reasons?.hard_stop)}</td>
+        <td>${num(shadow.executed_entries)}</td></tr>`;
+    });
+    if (v6Shadow) {
+      const delta = Number(v6ShadowFull.period_return)
+        - Number(v6BaselineFull.period_return);
+      v6Rows.push(`<tr><td>1-9月连续曲线</td>
+        <td class="${tone(v6BaselineFull.period_return)}">${pct(v6BaselineFull.period_return)}</td>
+        <td class="${tone(v6ShadowFull.period_return)}">${pct(v6ShadowFull.period_return)}</td>
+        <td class="${tone(delta)}">${pct(delta)}</td>
+        <td class="down">${pct(v6BaselineFull.max_drawdown)}</td>
+        <td class="down">${pct(v6ShadowFull.max_drawdown)}</td>
+        <td>${num(v6ShadowFull.exit_reasons?.hard_stop)}</td>
+        <td>${num(v6ShadowFull.executed_entries)}</td></tr>`);
+    }
+    $('#v6-exit-status').textContent =
+      v6Exit.selection?.accepted
+        ? '通过，待前瞻确认' : '事后影子，不控制卖出';
+    $('#v6-exit-status').className =
+      `status ${v6Exit.selection?.accepted ? 'ok' : 'bad'}`;
+    $('#v6-exit-table').innerHTML = `<thead><tr>
+      <th>时间区间</th><th>原始空点收益</th><th>-3%止损影子</th>
+      <th>收益增量</th><th>原始最大回撤</th><th>影子最大回撤</th>
+      <th>止损触发</th><th>实际开仓</th>
+      </tr></thead><tbody>${v6Rows.join('') || emptyRow(8)}</tbody>`;
 
     const entryLabels = ['信号收盘', '下一开盘', '下一收盘'];
     const entryValues = [
