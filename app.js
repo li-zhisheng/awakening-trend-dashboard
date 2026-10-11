@@ -606,13 +606,38 @@
     const bars = daily?.bars || [];
     const index = bars.findIndex(row =>
       String(row[0]).replaceAll('-', '') === date);
-    if (index < 0) return {};
+    const candidate = stockCandidateForDate(daily?.code, date);
+    const candidatePreviousClose = Number(
+      candidate?.selection?.previous_close);
+    if (index < 0) {
+      return {
+        close: null,
+        previousClose: (
+          Number.isFinite(candidatePreviousClose)
+          && candidatePreviousClose > 0
+        ) ? candidatePreviousClose : null,
+      };
+    }
     return {
       close: Number(bars[index][4]),
       previousClose: index > 0
         ? Number(bars[index - 1][4])
-        : Number(daily.prior_close),
+        : (
+          Number.isFinite(candidatePreviousClose)
+          && candidatePreviousClose > 0
+        ) ? candidatePreviousClose : Number(daily.prior_close),
     };
+  }
+
+  function stockCandidateForDate(code, date) {
+    const normalized = String(date || '').replace(
+      /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+    const days = (
+      typeof DATA === 'object'
+      && Array.isArray(DATA?.daily_candidates?.days)
+    ) ? DATA.daily_candidates.days : [];
+    return days.find(day => day.date === normalized)?.candidates
+      ?.find(item => item.selection?.code === code) || null;
   }
 
   function intradayMarksForDate(daily, date) {
@@ -765,14 +790,14 @@
     if (
       !Number.isFinite(context.previousClose)
       || context.previousClose <= 0
-      || !Number.isFinite(context.close)
-      || context.close <= 0
       || !Number.isFinite(rawClose)
       || rawClose <= 0
     ) {
       throw new Error('SuperMind分钟归档缺少日K复权基准');
     }
-    const factor = context.close / rawClose;
+    const factor = (
+      Number.isFinite(context.close) && context.close > 0
+    ) ? context.close / rawClose : 1;
     let cumulativeVolume = 0;
     let cumulativeAmount = 0;
     const points = payload.points.map(row => {
@@ -894,15 +919,15 @@
       });
     }
     const result = stockMinuteCache.get(code);
-    if (
-      requestedDate
-      && !result.days.some(day => day[0] === requestedDate)
-    ) {
+    if (requestedDate) {
       try {
         const archived = await loadArchivedMinute(
           code, requestedDate, daily);
         if (archived) {
-          result.days.push(archived);
+          const index = result.days.findIndex(
+            day => day[0] === requestedDate);
+          if (index >= 0) result.days[index] = archived;
+          else result.days.push(archived);
           result.days.sort((left, right) =>
             left[0].localeCompare(right[0]));
         }
@@ -1394,9 +1419,7 @@
     const hasAverage = averagePrices.some(value =>
       Number.isFinite(value));
     const hasVolume = volumes.some(value => value > 0);
-    const candidate = candidateDays()
-      .find(item => item.date === date)?.candidates
-      ?.find(item => item.selection?.code === state.code);
+    const candidate = stockCandidateForDate(state.code, date);
     const marks = [...(rawMarks || [])];
     if (candidate) {
       const selection = candidate.selection;
