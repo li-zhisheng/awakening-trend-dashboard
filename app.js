@@ -10,6 +10,7 @@
   const charts = new Map();
   const stockDetailCache = new Map();
   const stockDailyCache = new Map();
+  const stockSignalMarkCache = new Map();
   const stockMinuteCache = new Map();
   const stockLiveCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
@@ -506,6 +507,23 @@
     return stockDetailCache.get(code);
   }
 
+  async function loadStockSignalMarks(code) {
+    if (!stockSignalMarkCache.has(code)) {
+      const value = await loadFirst([
+        `signal-marks/${code.slice(0, 2)}/${code}.json`,
+      ]);
+      if (
+        value.schema !== 'awakening-trend-signal-marks-v1'
+        || value.code !== code
+        || !Array.isArray(value.marks)
+      ) {
+        throw new Error('历史信号分钟定位不完整');
+      }
+      stockSignalMarkCache.set(code, value);
+    }
+    return stockSignalMarkCache.get(code);
+  }
+
   async function loadStockDaily(code) {
     if (!stockDailyCache.has(code)) {
       const value = await loadFirst([
@@ -519,6 +537,8 @@
       ) {
         throw new Error('日K数据不完整');
       }
+      const signalMarks = await loadStockSignalMarks(code);
+      value.intradayMarks = signalMarks.marks;
       const live = await loadStockLive(code);
       if (live?.days?.length) {
         const bars = value.bars.slice();
@@ -595,6 +615,17 @@
     };
   }
 
+  function intradayMarksForDate(daily, date) {
+    const normalized = String(date || '').replace(
+      /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+    return (daily?.intradayMarks || [])
+      .filter(mark => mark[0] === normalized)
+      .map(mark => [
+        String(mark[1]), Number(mark[2]), mark[3],
+        Number(mark[4]), Number(mark[5]),
+      ]);
+  }
+
   function parseTencentMinuteRows(
     rawRows, date, daily, rawPreviousClose = null,
   ) {
@@ -662,7 +693,8 @@
     });
     return [
       `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}`,
-      previousClose, points, [], '腾讯在线分钟价量',
+      previousClose, points, intradayMarksForDate(daily, date),
+      '腾讯在线分钟价量',
       '1分钟', null,
     ];
   }
@@ -767,7 +799,8 @@
     }
     return [
       `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6)}`,
-      context.previousClose, points, [],
+      context.previousClose, points,
+      intradayMarksForDate(daily, compact),
       'SuperMind真实1分钟统一归档', '1分钟', null,
     ];
   }
@@ -843,7 +876,9 @@
         for (const online of await loadTencentMinutes(code, daily)) {
           const index = days.findIndex(item => item[0] === online[0]);
           const persisted = index >= 0 ? days[index] : null;
-          online[3] = persisted?.[3] || [];
+          if (persisted?.[3]?.length) {
+            online[3] = persisted[3];
+          }
           online[6] = persisted?.[6] || null;
           if (index >= 0) days[index] = online;
           else days.push(online);
@@ -1228,23 +1263,30 @@
     const candidate = candidateDays()
       .find(item => item.date === date)?.candidates
       ?.find(item => item.selection?.code === state.code);
-    const marks = [...(rawMarks || [])].filter(mark =>
-      !(candidate && Number(mark[1]) === 1));
+    const marks = [...(rawMarks || [])];
     if (candidate) {
       const selection = candidate.selection;
-      let signalIndex = points.findIndex(
-        point => point[0] === selection.signal_time);
-      if (signalIndex < 0) {
-        signalIndex = points.findIndex(
-          point => point[0] > selection.signal_time);
-      }
-      if (signalIndex >= 0) {
-        marks.push([
-          points[signalIndex][0], 1, selection.strength,
-          selection.retention_probability,
-          Number(selection.signal_price) || prices[signalIndex],
-          'first_long',
-        ]);
+      const existingLong = marks.findIndex(mark =>
+        Number(mark[1]) === 1
+        && mark[0] === selection.signal_time);
+      if (existingLong >= 0) {
+        marks[existingLong] = [
+          ...marks[existingLong].slice(0, 5), 'first_long'];
+      } else {
+        let signalIndex = points.findIndex(
+          point => point[0] === selection.signal_time);
+        if (signalIndex < 0) {
+          signalIndex = points.findIndex(
+            point => point[0] > selection.signal_time);
+        }
+        if (signalIndex >= 0) {
+          marks.push([
+            points[signalIndex][0], 1, selection.strength,
+            selection.retention_probability,
+            Number(selection.signal_price) || prices[signalIndex],
+            'first_long',
+          ]);
+        }
       }
       const outcome = candidate.evaluation || {};
       const entryTime = (
@@ -1495,28 +1537,40 @@
       + (labels.length ? ` · ${labels.join(' · ')}` : '');
   }
 
+  function stockMinuteDates(state) {
+    return [...new Set([
+      ...(state ? [...state.minuteByDate.keys()] : []),
+      ...((state?.daily?.intradayMarks || []).map(mark => mark[0])),
+    ])].sort();
+  }
+
+  function renderStockMinuteDateOptions(state) {
+    const dates = stockMinuteDates(state);
+    $('#stock-minute-date').innerHTML = dates.map(day =>
+      `<option value="${esc(day)}">${esc(day)}${
+        state.minuteByDate.has(day) ? '' : ' · 信号日'
+      }</option>`).join('');
+    $('#stock-minute-date').value = state.date;
+    return dates;
+  }
+
   function syncStockMinuteNavigation() {
     const state = stockMarketState;
-    const dates = state
-      ? [...state.minuteByDate.keys()].sort()
-      : [];
+    const dates = stockMinuteDates(state);
     const index = dates.indexOf(state?.date);
     $('#stock-minute-prev').disabled = index <= 0;
     $('#stock-minute-next').disabled =
       index < 0 || index >= dates.length - 1;
   }
 
-  function moveStockMinuteDate(offset) {
+  async function moveStockMinuteDate(offset) {
     const state = stockMarketState;
     if (!state) return;
-    const dates = [...state.minuteByDate.keys()].sort();
+    const dates = stockMinuteDates(state);
     const index = dates.indexOf(state.date);
     const target = dates[index + offset];
     if (!target) return;
-    state.date = target;
-    $('#stock-minute-date').value = target;
-    renderStockMinute();
-    syncStockMinuteNavigation();
+    await openStockMinuteDate(target);
   }
 
   async function ensureStockMinutes(state, requestedDate = '') {
@@ -1534,15 +1588,13 @@
       state.minute = minute;
       state.minuteByDate = new Map(
         minute.days.map(day => [day[0], day]));
-      const dates = [...state.minuteByDate.keys()].sort();
+      const loadedDates = [...state.minuteByDate.keys()].sort();
       if (!state.minuteByDate.has(state.date)) {
-        state.date = dates.at(-1) || '';
+        state.date = loadedDates.at(-1) || '';
       }
-      $('#stock-minute-date').innerHTML = dates.map(day =>
-        `<option value="${esc(day)}">${esc(day)}</option>`).join('');
-      $('#stock-minute-date').value = state.date;
+      renderStockMinuteDateOptions(state);
       syncStockMinuteNavigation();
-      if (!dates.length) {
+      if (!loadedDates.length) {
         $('#stock-market-status').textContent =
           '该股票没有统一归档或腾讯/新浪1分钟数据';
       }
@@ -1571,7 +1623,7 @@
       return;
     }
     state.date = date;
-    $('#stock-minute-date').value = date;
+    renderStockMinuteDateOptions(state);
     await setStockMarketView('minute');
   }
 
@@ -2211,12 +2263,8 @@
       'click', () => moveStockMinuteDate(-1));
     $('#stock-minute-next').addEventListener(
       'click', () => moveStockMinuteDate(1));
-    $('#stock-minute-date').addEventListener('change', event => {
-      if (!stockMarketState) return;
-      stockMarketState.date = event.target.value;
-      renderStockMinute();
-      syncStockMinuteNavigation();
-    });
+    $('#stock-minute-date').addEventListener(
+      'change', event => openStockMinuteDate(event.target.value));
     $('#stock-dialog-close').addEventListener('click', () => $('#stock-dialog').close());
     $('#stock-dialog').addEventListener('close', () => {
       stockMarketState = null;
