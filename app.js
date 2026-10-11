@@ -168,7 +168,7 @@
 
   function renderHeader() {
     $('#generated-at').textContent = `数据生成 ${dt(DATA.generated_at)}`;
-    const health = DATA.trend_validation || DATA.paper?.health || {};
+    const health = DATA.paper?.health || DATA.trend_validation || {};
     const status = health.status || 'unknown';
     $('#live-state').textContent = status === 'ready'
       ? '盘中就绪' : status === 'waiting_market' ? '等待开市' : status;
@@ -1987,8 +1987,7 @@
       kpi('首次多空信号', `${num(validation.first_signal_count)} 条`,
         `首批 ${dt(validation.first_batch_quote_at)}`),
     ].join('');
-    const health = validation.status
-      ? validation : DATA.paper?.health || {};
+    const health = DATA.paper?.health || validation;
     $('#paper-status').textContent = health.status || '—';
     $('#paper-snapshot').textContent = dt(
       validation.generated_at
