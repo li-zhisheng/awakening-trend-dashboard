@@ -938,7 +938,35 @@
 
   async function loadStockMinutes(code, daily, requestedDate = '') {
     if (!stockMinuteCache.has(code)) {
-      const days = [];
+      stockMinuteCache.set(code, {
+        code,
+        schema: 'awakening-trend-online-minutes-v1',
+        days: [],
+        onlineLoaded: false,
+      });
+    }
+    const result = stockMinuteCache.get(code);
+    const upsert = day => {
+      const index = result.days.findIndex(item => item[0] === day[0]);
+      if (index >= 0) result.days[index] = day;
+      else result.days.push(day);
+      result.days.sort((left, right) =>
+        left[0].localeCompare(right[0]));
+    };
+    if (requestedDate) {
+      try {
+        const archived = await loadArchivedMinute(
+          code, requestedDate, daily);
+        if (archived) upsert(archived);
+      } catch (_error) {
+        // The requested stock day may legitimately be outside archive scope.
+      }
+      if (result.days.some(day => day[0] === requestedDate)) {
+        return result;
+      }
+    }
+    if (!result.onlineLoaded) {
+      result.onlineLoaded = true;
       const live = await loadStockLive(code);
       if (live) {
         try {
@@ -950,51 +978,24 @@
               day.frequency || '约1分钟真实快照',
               day.auction || null,
             ];
-            const index = days.findIndex(item => item[0] === day.date);
-            if (index >= 0) days[index] = normalized;
-            else days.push(normalized);
+            upsert(normalized);
           }
-          days.sort((left, right) => left[0].localeCompare(right[0]));
         } catch (_error) {
           // Tencent/Sina persisted snapshots remain optional.
         }
       }
       try {
         for (const online of await loadTencentMinutes(code, daily)) {
-          const index = days.findIndex(item => item[0] === online[0]);
-          const persisted = index >= 0 ? days[index] : null;
+          const persisted = result.days.find(
+            item => item[0] === online[0]);
           if (persisted?.[3]?.length) {
             online[3] = persisted[3];
           }
           online[6] = persisted?.[6] || null;
-          if (index >= 0) days[index] = online;
-          else days.push(online);
+          upsert(online);
         }
-        days.sort((left, right) => left[0].localeCompare(right[0]));
       } catch (_error) {
         // Persisted Tencent/Sina one-minute evidence remains available.
-      }
-      stockMinuteCache.set(code, {
-        code,
-        schema: 'awakening-trend-online-minutes-v1',
-        days,
-      });
-    }
-    const result = stockMinuteCache.get(code);
-    if (requestedDate) {
-      try {
-        const archived = await loadArchivedMinute(
-          code, requestedDate, daily);
-        if (archived) {
-          const index = result.days.findIndex(
-            day => day[0] === requestedDate);
-          if (index >= 0) result.days[index] = archived;
-          else result.days.push(archived);
-          result.days.sort((left, right) =>
-            left[0].localeCompare(right[0]));
-        }
-      } catch (_error) {
-        // The requested stock day may legitimately be outside archive scope.
       }
     }
     if (!result.days.length) throw new Error('分时数据暂不可用');
@@ -1057,12 +1058,15 @@
   function stockDailyPixelIndex(instance, event, count) {
     const x = Number(event?.offsetX ?? event?.event?.zrX);
     const y = Number(event?.offsetY ?? event?.event?.zrY);
-    if (
-      !Number.isFinite(x) || !Number.isFinite(y)
-      || !instance?.containPixel({ gridIndex: 0 }, [x, y])
-    ) return -1;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !instance) return -1;
+    const gridIndex = instance.containPixel(
+      { gridIndex: 0 }, [x, y],
+    ) ? 0 : instance.containPixel(
+      { gridIndex: 1 }, [x, y],
+    ) ? 1 : -1;
+    if (gridIndex < 0) return -1;
     const values = instance.convertFromPixel(
-      { gridIndex: 0 }, [x, y]);
+      { gridIndex }, [x, y]);
     const index = Math.round(Number(values?.[0]));
     return Number.isInteger(index) && index >= 0 && index < count
       ? index : -1;
@@ -1800,12 +1804,16 @@
       state.minute
       && (!requestedDate || state.minuteByDate.has(requestedDate))
     ) return true;
-    if (!state.minutePromise) {
-      state.minutePromise = loadStockMinutes(
-        state.code, state.daily, requestedDate);
+    const requestKey = requestedDate || '__online__';
+    if (!state.minutePromises.has(requestKey)) {
+      state.minutePromises.set(
+        requestKey,
+        loadStockMinutes(state.code, state.daily, requestedDate),
+      );
     }
+    const promise = state.minutePromises.get(requestKey);
     try {
-      const minute = await state.minutePromise;
+      const minute = await promise;
       if (stockMarketState !== state) return false;
       state.minute = minute;
       state.minuteByDate = new Map(
@@ -1828,17 +1836,23 @@
       }
       return false;
     } finally {
-      state.minutePromise = null;
+      if (state.minutePromises.get(requestKey) === promise) {
+        state.minutePromises.delete(requestKey);
+      }
     }
   }
 
   async function openStockMinuteDate(date) {
     const state = stockMarketState;
     if (!state || !date) return;
+    state.requestedMinuteDate = date;
     $('#stock-market-status').textContent =
       `正在核对 ${date} 的统一SuperMind 1分钟归档`;
     if (!await ensureStockMinutes(state, date)) return;
-    if (stockMarketState !== state) return;
+    if (
+      stockMarketState !== state
+      || state.requestedMinuteDate !== date
+    ) return;
     if (!state.minuteByDate.has(date)) {
       $('#stock-market-status').textContent =
         `${date} 没有统一归档的真实1分钟数据，已保留日K`;
@@ -1892,8 +1906,8 @@
     clearStockDailyPointer(chartInstance, stockMarketState);
     stockMarketState = {
       code, name: row.name, daily: null, minute: null,
-      minutePromise: null, minuteByDate: new Map(),
-      view: 'daily', date: requestedDate,
+      minutePromises: new Map(), minuteByDate: new Map(),
+      requestedMinuteDate: '', view: 'daily', date: requestedDate,
     };
     $('#stock-market-status').textContent = '正在读取日K';
     $('#stock-minute-date').innerHTML = '';
