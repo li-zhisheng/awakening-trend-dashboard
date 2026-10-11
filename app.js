@@ -67,7 +67,7 @@
     for (const path of paths) {
       try {
         const immutableArchive = (
-          path.includes('/awakening-minute-archive/')
+          path.includes('/awakening-minute-archive')
           && path.endsWith('.json.gz')
         );
         const response = await fetch(path, {
