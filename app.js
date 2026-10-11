@@ -831,12 +831,15 @@
   }
 
   async function loadArchivedMinute(code, date, daily) {
-    const base = String(DATA.minute_archive?.base_url || '')
-      .replace(/\/+$/, '');
     const compact = String(date || '').replaceAll('-', '');
+    const month = compact.slice(0, 6);
+    const routed = DATA.minute_archive?.month_base_urls?.[month];
+    const base = String(
+      routed || DATA.minute_archive?.base_url || ''
+    ).replace(/\/+$/, '');
     if (!base || !/^\d{8}$/.test(compact)) return null;
     const payload = await loadFirst([
-      `${base}/months/${compact.slice(0, 6)}/${code.slice(0, 2)}/${code}.json.gz`,
+      `${base}/months/${month}/${code.slice(0, 2)}/${code}.json.gz`,
       `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json.gz`,
       `${base}/days/${compact}/${code.slice(0, 2)}/${code}.json`,
     ]);
