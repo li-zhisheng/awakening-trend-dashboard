@@ -948,6 +948,90 @@
     };
   }
 
+  const stockDailyJumpSeries = '分时跳转热区';
+
+  function stockDailyJumpIndex(params) {
+    if (!params) return -1;
+    if (params.componentType === 'markPoint') {
+      const index = Number(params.data?.coord?.[0]);
+      return Number.isInteger(index) ? index : -1;
+    }
+    if (
+      params.componentType !== 'series'
+      || ![
+        '日K', 'MA5', 'MA10', 'MA20', '成交量',
+        stockDailyJumpSeries,
+      ].includes(params.seriesName)
+    ) return -1;
+    const index = Number(params.dataIndex);
+    return Number.isInteger(index) ? index : -1;
+  }
+
+  function stockDailyPixelIndex(instance, event, count) {
+    const x = Number(event?.offsetX ?? event?.event?.zrX);
+    const y = Number(event?.offsetY ?? event?.event?.zrY);
+    if (
+      !Number.isFinite(x) || !Number.isFinite(y)
+      || !instance?.containPixel({ gridIndex: 0 }, [x, y])
+    ) return -1;
+    const values = instance.convertFromPixel(
+      { gridIndex: 0 }, [x, y]);
+    const index = Math.round(Number(values?.[0]));
+    return Number.isInteger(index) && index >= 0 && index < count
+      ? index : -1;
+  }
+
+  function clearStockDailyPointer(instance, state) {
+    const handlers = state?.dailyPointerHandlers;
+    if (!instance || !handlers) return;
+    const renderer = instance.getZr();
+    renderer.off('click', handlers.click);
+    renderer.off('mousemove', handlers.mousemove);
+    renderer.off('globalout', handlers.globalout);
+    state.dailyPointerHandlers = null;
+    state.dailyHoverIndex = -1;
+  }
+
+  function stockDailyJumpOverlay(closes) {
+    return {
+      name: stockDailyJumpSeries,
+      type: 'custom',
+      coordinateSystem: 'cartesian2d',
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: closes.map((value, index) => [index, value]),
+      encode: { x: 0, y: 1 },
+      tooltip: { show: false },
+      z: 100,
+      silent: false,
+      clip: true,
+      renderItem: (params, api) => {
+        const center = api.coord([api.value(0), api.value(1)]);
+        const band = Math.max(5, Math.abs(api.size([1, 0])[0]) * .92);
+        return {
+          type: 'rect',
+          shape: {
+            x: center[0] - band / 2,
+            y: params.coordSys.y,
+            width: band,
+            height: params.coordSys.height,
+          },
+          style: {
+            fill: 'rgba(85,197,199,.001)',
+          },
+          emphasis: {
+            style: {
+              fill: 'rgba(85,197,199,.16)',
+              stroke: '#55c5c7',
+              lineWidth: 1,
+            },
+          },
+          cursor: 'pointer',
+        };
+      },
+    };
+  }
+
   function stockDailyMarks(daily) {
     const makeMark = (
       index, direction, strength, probability, name = '',
@@ -1090,10 +1174,15 @@
           return `${esc(row[0])}<br>开 ${num(row[1], 2)}　收 ${num(row[4], 2)}`
             + `<br>高 ${num(row[2], 2)}　低 ${num(row[3], 2)}`
             + (averages ? `<br>${averages}` : '')
-            + `<br>成交量 ${num(row[5])}`;
+            + `<br>成交量 ${num(row[5])}`
+            + '<br><span style="color:#55c5c7;font-weight:700">'
+            + '点击查看该日分时</span>';
         },
       },
-      axisPointer: { link: [{ xAxisIndex: 'all' }] },
+      axisPointer: {
+        link: [{ xAxisIndex: 'all' }],
+        lineStyle: { color: '#55c5c7' },
+      },
       grid: [
         { left: 58, right: 18, top: 42, height: '58%' },
         { left: 58, right: 18, top: '75%', height: '11%' },
@@ -1102,6 +1191,12 @@
         {
           ...axisBase(), type: 'category', data: dates,
           boundaryGap: true, axisLabel: { show: false },
+          axisPointer: {
+            show: true,
+            type: 'shadow',
+            label: { show: false },
+            shadowStyle: { color: 'rgba(85,197,199,.10)' },
+          },
         },
         {
           ...axisBase(), type: 'category', gridIndex: 1,
@@ -1180,27 +1275,64 @@
             },
           })),
         },
+        stockDailyJumpOverlay(closes),
       ],
     });
+    clearStockDailyPointer(instance, state);
     instance?.off('click');
-    instance?.on('click', params => {
-      if (
-        params.componentType !== 'series'
-        || params.seriesType !== 'candlestick'
-        || params.seriesName !== '日K'
-      ) return;
-      const day = dates[params.dataIndex];
-      if (!day) return;
-      openStockMinuteDate(day);
-    });
+    instance?.off('mouseover');
+    instance?.off('mouseout');
     const signalMarks = marks.filter(mark =>
       mark.kind !== 'strategy_buy');
     const strong = signalMarks.filter(mark =>
       mark.strength === 'strong').length;
     const weak = signalMarks.length - strong;
     const buys = marks.length - signalMarks.length;
-    $('#stock-market-status').textContent =
+    const dailyStatus =
       `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 策略买点 ${buys} · 点击K线查看对应日期分时（仅真实1分钟留存日可用）`;
+    $('#stock-market-status').textContent = dailyStatus;
+    if (!instance) return;
+    const renderer = instance.getZr();
+    const setHover = index => {
+      if (index === state.dailyHoverIndex) return;
+      if (state.dailyHoverIndex >= 0) {
+        instance.dispatchAction({
+          type: 'downplay',
+          seriesName: stockDailyJumpSeries,
+          dataIndex: state.dailyHoverIndex,
+        });
+      }
+      state.dailyHoverIndex = index;
+      if (index >= 0) {
+        instance.dispatchAction({
+          type: 'highlight',
+          seriesName: stockDailyJumpSeries,
+          dataIndex: index,
+        });
+        renderer.setCursorStyle('pointer');
+        $('#stock-market-status').textContent =
+          `${dates[index]} · 可跳转真实1分钟分时`;
+      } else {
+        renderer.setCursorStyle('default');
+        $('#stock-market-status').textContent = dailyStatus;
+      }
+    };
+    const handlers = {
+      click: event => {
+        const index = stockDailyPixelIndex(
+          instance, event, dates.length);
+        const day = dates[index];
+        if (day) openStockMinuteDate(day);
+      },
+      mousemove: event => setHover(stockDailyPixelIndex(
+        instance, event, dates.length)),
+      globalout: () => setHover(-1),
+    };
+    state.dailyPointerHandlers = handlers;
+    state.dailyHoverIndex = -1;
+    renderer.on('click', handlers.click);
+    renderer.on('mousemove', handlers.mousemove);
+    renderer.on('globalout', handlers.globalout);
   }
 
   function renderStockMinute() {
@@ -1209,7 +1341,9 @@
     if (!state || !day) {
       $('#stock-market-status').textContent =
         '该交易日没有腾讯/新浪1分钟数据';
-      charts.get('stock-detail-chart')?.clear();
+      const instance = charts.get('stock-detail-chart');
+      clearStockDailyPointer(instance, state);
+      instance?.clear();
       return;
     }
     const [
@@ -1517,7 +1651,10 @@
         }] : []),
       ],
     });
+    clearStockDailyPointer(instance, state);
     instance?.off('click');
+    instance?.off('mouseover');
+    instance?.off('mouseout');
     const labels = marks.map(mark => {
       const kind = mark[5] || 'formula_signal';
       const label = (
@@ -1666,6 +1803,8 @@
       `<tbody>${emptyRow(6, '正在读取账户明细')}</tbody>`;
     $('#stock-executions').innerHTML =
       `<tbody>${emptyRow(5, '正在读取成交明细')}</tbody>`;
+    const chartInstance = charts.get('stock-detail-chart');
+    clearStockDailyPointer(chartInstance, stockMarketState);
     stockMarketState = {
       code, name: row.name, daily: null, minute: null,
       minutePromise: null, minuteByDate: new Map(),
@@ -1677,7 +1816,7 @@
     syncStockMinuteNavigation();
     $('#stock-minute-tab').disabled = false;
     $('#stock-dialog').showModal();
-    charts.get('stock-detail-chart')?.clear();
+    chartInstance?.clear();
     const state = stockMarketState;
     loadStockDetail(code).then(detail => {
       if (stockMarketState === state) {
@@ -2267,8 +2406,12 @@
       'change', event => openStockMinuteDate(event.target.value));
     $('#stock-dialog-close').addEventListener('click', () => $('#stock-dialog').close());
     $('#stock-dialog').addEventListener('close', () => {
+      const instance = charts.get('stock-detail-chart');
+      clearStockDailyPointer(instance, stockMarketState);
       stockMarketState = null;
-      charts.get('stock-detail-chart')?.off('click');
+      instance?.off('click');
+      instance?.off('mouseover');
+      instance?.off('mouseout');
     });
     $('#refresh').addEventListener('click', () => location.reload());
     window.addEventListener('resize', resizeVisibleCharts);
