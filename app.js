@@ -182,15 +182,17 @@
     const v6Monthly = DATA.v6_monthly?.monthly || [];
     const months = original ? originalMonthly : v6Monthly;
     const strategy = DATA.v6_monthly?.strategy || {};
+    const v6Summary = DATA.v6_monthly?.summary || {};
     $('#monthly-chart-note').textContent = original
       ? '盘后确认信号的1分钟回放 · 存在未来信息偏差，收益仅供历史研究'
-      : `旧候选采样+一分钟执行代理 · 非当前V6 · ${num(strategy.slots)}槽`;
+      : `现役V6全程1分钟 · 固定当前模型反推 · ${num(strategy.slots)}槽`;
     $('#monthly-nav-note').textContent = original
       ? '原始多空一分钟逐月复合路径'
-      : 'V6四槽逐月复合路径';
+      : 'V6四槽连续净值 · 期末净值包含未平仓浮盈';
     $('#monthly-table-note').textContent = original
       ? '盘后确认信号回放 · 规则卖出和月末持仓 · 非实盘收益'
-      : '旧研究代理 · 候选发现并非逐分钟 · 已停用';
+      : `固定模型反推，非历史实盘 · 已平仓 ${cny(v6Summary.realized_pnl)}`
+        + ` · 标记收益 ${pct(v6Summary.annual_return)}`;
     chart('monthly-chart', {
       animation: false,
       tooltip: { trigger: 'axis', valueFormatter: (v) => pct(v) },
@@ -239,12 +241,13 @@
     });
     if (!original) {
       $('#monthly-table').innerHTML = `<thead><tr>
-        <th>月份</th><th>V6月收益</th><th>累计收益</th>
+        <th>月份</th><th>V6月收益</th><th>累计收益</th><th>月盈亏</th>
         <th>买入</th><th>卖出</th><th>多点</th><th>空点</th><th>月末持仓</th>
       </tr></thead><tbody>${v6Monthly.map(row => `<tr>
         <td>${esc(row.month)}</td>
         <td class="${tone(row.return)}">${pct(row.return)}</td>
         <td class="${tone(row.cumulative_return)}">${pct(row.cumulative_return)}</td>
+        <td class="${tone(row.profit_cny)}">${cny(row.profit_cny)}</td>
         <td>${num(row.buys)}</td><td>${num(row.sells)}</td>
         <td>${num(row.long_signals)}</td><td>${num(row.short_signals)}</td>
         <td>${num(row.holdings_end)}</td></tr>`).join('')}</tbody>`;
