@@ -23,7 +23,9 @@
     weakShort: '#3fc28b',
   };
   const $ = (selector) => document.querySelector(selector);
-  const dataPaths = (api, file) => staticHost ? [file] : [api, file];
+  const dataPaths = (api, file) => (
+    staticHost ? [`${file}?t=${Date.now()}`] : [api, file]
+  );
   const esc = (value) => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
