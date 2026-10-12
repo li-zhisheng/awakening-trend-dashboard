@@ -1980,6 +1980,7 @@
   function renderPaper() {
     const summary = PAPER?.summary || DATA.paper?.summary || {};
     const slotSummary = DATA.v6_slot_shadow?.summary || {};
+    const morningSummary = DATA.v6_morning_shadow?.summary || {};
     const live = DATA.trend_live || {};
     const validation = DATA.trend_validation || {};
     $('#paper-kpis').innerHTML = [
@@ -1995,6 +1996,12 @@
       kpi('V6槽位状态',
         `${num(slotSummary.holding_count)} / 4 持仓`,
         `待买 ${num(slotSummary.pending_entry_count)} · 待卖 ${num(slotSummary.pending_exit_count)}`),
+      kpi('09:40弱势挑战', cny(morningSummary.net_pnl),
+        `净值 ${cny(morningSummary.equity)}`,
+        tone(morningSummary.net_pnl)),
+      kpi('挑战账本槽位',
+        `${num(morningSummary.holding_count)} / 4 持仓`,
+        `待买 ${num(morningSummary.pending_entry_count)} · 待卖 ${num(morningSummary.pending_exit_count)}`),
       kpi('目标池采集覆盖', pct(
         validation.target_coverage ?? live.coverage),
       `${num(
