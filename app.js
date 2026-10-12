@@ -1786,17 +1786,27 @@
   }
 
   function stockMinuteDates(state) {
+    const startDate = String(state?.minuteStartDate || '');
+    const followupDates = startDate
+      ? (state?.daily?.bars || [])
+        .map(row => String(row?.[0] || ''))
+        .filter(day => day >= startDate)
+      : [];
     return [...new Set([
       ...(state ? [...state.minuteByDate.keys()] : []),
       ...((state?.daily?.intradayMarks || []).map(mark => mark[0])),
+      ...followupDates,
     ])].sort();
   }
 
   function renderStockMinuteDateOptions(state) {
     const dates = stockMinuteDates(state);
+    const signalDates = new Set(
+      (state?.daily?.intradayMarks || []).map(mark => mark[0]));
     $('#stock-minute-date').innerHTML = dates.map(day =>
       `<option value="${esc(day)}">${esc(day)}${
-        state.minuteByDate.has(day) ? '' : ' · 信号日'
+        state.minuteByDate.has(day)
+          ? '' : signalDates.has(day) ? ' · 信号日' : ' · 待加载'
       }</option>`).join('');
     $('#stock-minute-date').value = state.date;
     return dates;
@@ -1929,7 +1939,8 @@
     stockMarketState = {
       code, name: row.name, daily: null, minute: null,
       minutePromises: new Map(), minuteByDate: new Map(),
-      requestedMinuteDate: '', view: 'daily', date: requestedDate,
+      requestedMinuteDate: '', minuteStartDate: requestedDate,
+      view: 'daily', date: requestedDate,
     };
     $('#stock-market-status').textContent = '正在读取日K';
     $('#stock-minute-date').innerHTML = '';
@@ -1968,6 +1979,7 @@
 
   function renderPaper() {
     const summary = PAPER?.summary || DATA.paper?.summary || {};
+    const slotSummary = DATA.v6_slot_shadow?.summary || {};
     const live = DATA.trend_live || {};
     const validation = DATA.trend_validation || {};
     $('#paper-kpis').innerHTML = [
@@ -1977,6 +1989,12 @@
       kpi('净盈亏', cny(summary.net_pnl), '', tone(summary.net_pnl)),
       kpi('持仓', `${num(summary.holding_count)} 只`, `待卖 ${num(summary.pending_exit_count)}`),
       kpi('模拟成交', `${num(summary.fill_count)} 笔`, '不连接券商'),
+      kpi('V6四槽影子', cny(slotSummary.net_pnl),
+        `净值 ${cny(slotSummary.equity)}`,
+        tone(slotSummary.net_pnl)),
+      kpi('V6槽位状态',
+        `${num(slotSummary.holding_count)} / 4 持仓`,
+        `待买 ${num(slotSummary.pending_entry_count)} · 待卖 ${num(slotSummary.pending_exit_count)}`),
       kpi('目标池采集覆盖', pct(
         validation.target_coverage ?? live.coverage),
       `${num(
