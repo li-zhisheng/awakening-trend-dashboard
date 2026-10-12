@@ -1986,6 +1986,8 @@
     const summary = PAPER?.summary || DATA.paper?.summary || {};
     const slotSummary = DATA.v6_slot_shadow?.summary || {};
     const morningSummary = DATA.v6_morning_shadow?.summary || {};
+    const cutoffSummary =
+      DATA.v6_entry_cutoff_shadow?.summary || {};
     const live = DATA.trend_live || {};
     const validation = DATA.trend_validation || {};
     $('#paper-kpis').innerHTML = [
@@ -2007,6 +2009,12 @@
       kpi('挑战账本槽位',
         `${num(morningSummary.holding_count)} / 4 持仓`,
         `待买 ${num(morningSummary.pending_entry_count)} · 待卖 ${num(morningSummary.pending_exit_count)}`),
+      kpi('11:00截止挑战', cny(cutoffSummary.net_pnl),
+        `净值 ${cny(cutoffSummary.equity)}`,
+        tone(cutoffSummary.net_pnl)),
+      kpi('截止挑战槽位',
+        `${num(cutoffSummary.holding_count)} / 4 持仓`,
+        `待买 ${num(cutoffSummary.pending_entry_count)} · 待卖 ${num(cutoffSummary.pending_exit_count)}`),
       kpi('目标池采集覆盖', pct(
         validation.target_coverage ?? live.coverage),
       `${num(
