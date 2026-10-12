@@ -1982,7 +1982,7 @@
   function renderPaper() {
     const summary = PAPER?.summary || DATA.paper?.summary || {};
     const slotSummary = DATA.v6_slot_shadow?.summary || {};
-    const controlSummary = DATA.v6_control_shadow?.summary || {};
+    const morningSummary = DATA.v6_morning_shadow?.summary || {};
     const live = DATA.trend_live || {};
     const validation = DATA.trend_validation || {};
     $('#paper-kpis').innerHTML = [
@@ -1992,18 +1992,18 @@
       kpi('净盈亏', cny(summary.net_pnl), '', tone(summary.net_pnl)),
       kpi('持仓', `${num(summary.holding_count)} 只`, `待卖 ${num(summary.pending_exit_count)}`),
       kpi('模拟成交', `${num(summary.fill_count)} 笔`, '不连接券商'),
-      kpi('V6四槽主策略', cny(slotSummary.net_pnl),
+      kpi('V6四槽基线', cny(slotSummary.net_pnl),
         `净值 ${cny(slotSummary.equity)}`,
         tone(slotSummary.net_pnl)),
-      kpi('主策略槽位',
+      kpi('基线槽位',
         `${num(slotSummary.holding_count)} / 4 持仓`,
         `待买 ${num(slotSummary.pending_entry_count)} · 待卖 ${num(slotSummary.pending_exit_count)}`),
-      kpi('旧V6对照', cny(controlSummary.net_pnl),
-        `净值 ${cny(controlSummary.equity)}`,
-        tone(controlSummary.net_pnl)),
-      kpi('对照账本槽位',
-        `${num(controlSummary.holding_count)} / 4 持仓`,
-        `待买 ${num(controlSummary.pending_entry_count)} · 待卖 ${num(controlSummary.pending_exit_count)}`),
+      kpi('09:40规则挑战', cny(morningSummary.net_pnl),
+        `净值 ${cny(morningSummary.equity)}`,
+        tone(morningSummary.net_pnl)),
+      kpi('挑战账本槽位',
+        `${num(morningSummary.holding_count)} / 4 持仓`,
+        `待买 ${num(morningSummary.pending_entry_count)} · 待卖 ${num(morningSummary.pending_exit_count)}`),
       kpi('目标池采集覆盖', pct(
         validation.target_coverage ?? live.coverage),
       `${num(
