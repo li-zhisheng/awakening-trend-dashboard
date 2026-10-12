@@ -184,13 +184,13 @@
     const strategy = DATA.v6_monthly?.strategy || {};
     $('#monthly-chart-note').textContent = original
       ? '盘后确认信号的1分钟回放 · 存在未来信息偏差，收益仅供历史研究'
-      : `V6稳定买入与首次空点卖出 · ${num(strategy.slots)}槽`;
+      : `旧候选采样+一分钟执行代理 · 非当前V6 · ${num(strategy.slots)}槽`;
     $('#monthly-nav-note').textContent = original
       ? '原始多空一分钟逐月复合路径'
       : 'V6四槽逐月复合路径';
     $('#monthly-table-note').textContent = original
       ? '盘后确认信号回放 · 规则卖出和月末持仓 · 非实盘收益'
-      : '当前V6 · 一分钟稳定买入 · 首次空点卖出';
+      : '旧研究代理 · 候选发现并非逐分钟 · 已停用';
     chart('monthly-chart', {
       animation: false,
       tooltip: { trigger: 'axis', valueFormatter: (v) => pct(v) },
@@ -362,7 +362,7 @@
       ? `${day.date} · ${day.mode === 'live_shadow'
         ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
         : day.mode === 'historical_v6_backtest'
-          ? 'v6历史回测 · 下一根5分钟确认代理'
+          ? '旧历史候选档案 · 非当前一分钟V6'
           : '交易日样本'}`
       : value ? `${value} · 无交易日样本` : '暂无样本';
 
@@ -387,7 +387,7 @@
       kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
         day?.mode === 'live_shadow'
           ? '同一扫描分钟横向比较'
-          : '同一5分钟横向比较'),
+          : '旧历史研究批次'),
       kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
         day?.mode === 'live_shadow'
           ? '盘中名单尚无事后收益'
@@ -420,7 +420,7 @@
       stabilize_then_rank: '观察企稳后排序',
       pullback_then_stabilize: '等待回落企稳',
       reject_high_signal: '首点>5%永久不可买',
-      historical_next_5m_confirmation: '下一根5分钟确认',
+      historical_next_5m_confirmation: '旧历史确认代理（非当前规则）',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
       <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th>
