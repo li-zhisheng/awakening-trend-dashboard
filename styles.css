@@ -119,6 +119,12 @@ input,select{
   overflow-wrap:anywhere;text-align:right;
 }
 .candidate-table-wrap{max-height:680px}
+.candidate-marker{
+  display:inline-block;margin-top:5px;padding:2px 5px;
+  border:1px solid var(--amber);border-radius:3px;
+  color:var(--amber);font-size:11px;line-height:1.4;
+  white-space:nowrap;
+}
 .stock-table-wrap{max-height:660px}
 .stock-link{border:0;background:none;padding:0;color:#76ced2;text-decoration:underline;text-underline-offset:3px}
 .pagination{display:flex;align-items:center;justify-content:center;gap:14px;padding-top:14px}

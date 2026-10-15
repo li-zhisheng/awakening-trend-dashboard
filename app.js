@@ -414,6 +414,8 @@
       live_wait_pullback: '等待回落',
       live_ready_shadow: '回落/走势企稳，仅影子就绪',
       live_invalidated: '当前失效',
+      live_entry_ready_lost: '曾可买，当前不可买',
+      live_archive_recovered_incomplete: '旧档案恢复，状态证据不完整',
       historical_complete: '历史确认，事后验证完成',
       historical_censored: '历史确认，后续样本不足',
       historical_signal_disappeared: '多点出现，确认前消失',
@@ -456,6 +458,15 @@
       const entryEvidence = outcome.entry_time
         ? `<br><small>${clock(outcome.entry_time)}${entryPrice}</small>`
         : statusAt ? `<br><small>${esc(statusAt)}</small>` : '';
+      const readyLostAt = selection.entry_ready_lost_at
+        ? dt(selection.entry_ready_lost_at).split(' ')[1] : '';
+      const readyLossMarker = selection.entry_ready_was_lost
+        ? `<br><span class="candidate-marker ready-lost">${
+          selection.entry_ready_currently_lost
+            ? `买点消失${readyLostAt ? ` ${esc(readyLostAt)}` : ''}`
+            : '买点曾消失，现已恢复'
+        }</span>`
+        : '';
       return `<tr><td>${esc(signalTime)}${signalPrice}</td>
         <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}" data-date="${esc(day.date)}">${esc(selection.code)}</button></td>
         <td>${esc(selection.name)}</td>
@@ -478,7 +489,7 @@
         <td class="${tone(selection.pullback_from_peak == null ? null : -selection.pullback_from_peak)}">${selection.pullback_from_peak == null ? '—' : pct(-selection.pullback_from_peak)}</td>
         <td>${selection.stable_observations == null ? '—' : num(selection.stable_observations)}</td>
         <td>${esc(entryPlan)}${entryEvidence}</td>
-        <td>${esc(displayStatus)}</td>
+        <td>${esc(displayStatus)}${readyLossMarker}</td>
         <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
         <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
         <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
@@ -625,20 +636,48 @@
       const signalMarks = await loadStockSignalMarks(code);
       value.intradayMarks = signalMarks.marks;
       const live = await loadStockLive(code);
-      if (live?.days?.length) {
+      if (live) {
         const bars = value.bars.slice();
         const liveSignals = [];
-        for (const day of live.days) {
+        const recentDaily = Array.isArray(live.daily_bars)
+          ? live.daily_bars.filter(row =>
+            Array.isArray(row) && row.length >= 6)
+          : [];
+        if (
+          live.daily_bar?.date
+          && !recentDaily.some(row => row[0] === live.daily_bar.date)
+        ) {
+          recentDaily.push([
+            live.daily_bar.date,
+            Number(live.daily_bar.open),
+            Number(live.daily_bar.high),
+            Number(live.daily_bar.low),
+            Number(live.daily_bar.close),
+            Number(live.daily_bar.volume),
+          ]);
+        }
+        for (const row of recentDaily) {
+          const normalized = [
+            String(row[0]), ...row.slice(1, 6).map(Number),
+          ];
+          if (normalized.slice(1).some(item => !Number.isFinite(item))) {
+            continue;
+          }
+          const index = bars.findIndex(
+            bar => bar[0] === normalized[0]);
+          if (index >= 0) bars[index] = normalized;
+          else bars.push(normalized);
+        }
+        const dailyByDate = new Map(
+          recentDaily.map(row => [String(row[0]), row]));
+        for (const day of live.days || []) {
           if (!day.points?.length) continue;
           const prices = day.points.map(point => Number(point[1]));
           const volume = day.points.reduce(
             (total, point) => total + Number(point[2] || 0), 0);
-          const exact = live.daily_bar?.date === day.date
-            ? live.daily_bar : null;
+          const exact = dailyByDate.get(day.date);
           const row = exact ? [
-            day.date, Number(exact.open), Number(exact.high),
-            Number(exact.low), Number(exact.close),
-            Number(exact.volume),
+            day.date, ...exact.slice(1, 6).map(Number),
           ] : [
             day.date, prices[0], Math.max(...prices),
             Math.min(...prices), prices.at(-1), volume,
