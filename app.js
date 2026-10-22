@@ -452,6 +452,89 @@
     renderSelectionTable();
   }
 
+  function historySelectionRows() {
+    return DATA.selection_history?.rows || [];
+  }
+
+  function filteredHistorySelections() {
+    const period = $('#history-selection-period').value;
+    const result = $('#history-selection-result').value;
+    const repeat = $('#history-selection-repeat').value;
+    const query = $('#history-selection-search').value.trim().toLowerCase();
+    return historySelectionRows().filter(row => {
+      if (period !== 'all' && row.quarter !== period) return false;
+      if (query && !`${row.code}${row.name}`.toLowerCase().includes(query)) {
+        return false;
+      }
+      if (repeat === 'first' && row.sequence_no !== 1) return false;
+      if (repeat === 'repeat' && !row.is_repeat) return false;
+      if (result === 'large' && row.large_opportunity !== true) return false;
+      if (
+        result === 'hit'
+        && !(row.hit === true && row.large_opportunity !== true)
+      ) return false;
+      if (result === 'miss' && row.hit !== false) return false;
+      return true;
+    });
+  }
+
+  function renderHistorySelectionTable() {
+    const rows = filteredHistorySelections();
+    $('#history-selection-count').textContent =
+      `显示 ${num(rows.length)} / ${num(historySelectionRows().length)} 条`;
+    $('#history-selection-table').innerHTML = `<thead><tr>
+      <th>信号日期</th><th>代码</th><th>名称</th><th>置信分差</th>
+      <th>T0 收盘修复</th><th>T+1 收盘修复</th>
+      <th>T+2 收盘修复</th><th>T+3 收盘修复</th>
+      <th>最大修复</th><th>验证结果</th><th>入选次数</th>
+    </tr></thead><tbody>${rows.length ? rows.map(row => {
+      const sessions = row.session_close_recovery || {};
+      const status = row.large_opportunity
+        ? '≥15% 大机会'
+        : row.hit ? '≥10% 命中' : '<10% 未命中';
+      const repeat = row.signal_count_for_code > 1
+        ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
+        : '首次且唯一';
+      return `<tr>
+        <td>${esc(row.day)}</td><td>${esc(row.code)}</td>
+        <td>${esc(row.name)}</td>
+        <td>${num(row.normalized_margin, 3)}</td>
+        <td class="${tone(sessions.T0)}">${optionalPct(sessions.T0)}</td>
+        <td class="${tone(sessions.T1)}">${optionalPct(sessions.T1)}</td>
+        <td class="${tone(sessions.T2)}">${optionalPct(sessions.T2)}</td>
+        <td class="${tone(sessions.T3)}">${optionalPct(sessions.T3)}</td>
+        <td class="${tone(row.maximum_close_recovery)}">${optionalPct(row.maximum_close_recovery)}</td>
+        <td class="${row.hit ? 'up' : 'down'}">${esc(status)}</td>
+        <td>${esc(repeat)}</td>
+      </tr>`;
+    }).join('') : emptyRow(11, '当前筛选条件没有历史信号')}</tbody>`;
+  }
+
+  function renderHistorySelections() {
+    const payload = DATA.selection_history || {};
+    const summary = payload.summary || {};
+    const signals = Number(summary.signals || 0);
+    const audited = Number(summary.audited || 0);
+    $('#history-selection-kpis').innerHTML = [
+      kpi('历史信号', `${num(signals)} 条`,
+        `${num(summary.unique_codes)} 只股票 · 2024H2–2025`),
+      kpi('有效审计', `${num(audited)} 条`,
+        '统一 T0 至 T+3 修复口径'),
+      kpi('≥10% 修复命中率',
+        audited ? pct(summary.hits_ge_10pct / audited) : '—',
+        `${num(summary.hits_ge_10pct)} / ${num(audited)}`, 'up'),
+      kpi('≥15% 大机会占比',
+        audited
+          ? pct(summary.large_opportunities_ge_15pct / audited) : '—',
+        `${num(summary.large_opportunities_ge_15pct)} / ${num(audited)}`, 'up'),
+    ].join('');
+    $('#history-selection-integrity').textContent =
+      payload.sha256 ? '历史源已固化' : '历史源异常';
+    $('#history-selection-integrity').className =
+      `status ${payload.sha256 ? 'ok' : 'bad'}`;
+    renderHistorySelectionTable();
+  }
+
   function filteredStocks() {
     const query = $('#stock-search').value.trim().toLowerCase();
     const filter = $('#stock-return-filter').value;
@@ -2473,6 +2556,11 @@
       'selection-repeat', 'selection-search',
     ].forEach(id => document.getElementById(id).addEventListener(
       'input', renderSelectionTable));
+    [
+      'history-selection-period', 'history-selection-result',
+      'history-selection-repeat', 'history-selection-search',
+    ].forEach(id => document.getElementById(id).addEventListener(
+      'input', renderHistorySelectionTable));
     $('#stock-daily-tab').addEventListener(
       'click', () => setStockMarketView('daily'));
     $('#stock-minute-tab').addEventListener(
@@ -2502,7 +2590,10 @@
         loadFirst(dataPaths('api/data', 'data.json')),
         loadFirst(dataPaths('api/paper', 'paper.json')),
       ]);
-      if (!DATA.final_selection && !staticHost) {
+      if (
+        (!DATA.final_selection || !DATA.selection_history)
+        && !staticHost
+      ) {
         DATA = await loadFirst([`data.json?t=${Date.now()}`]);
       }
       if (DATA.schema !== 'awakening-trend-dashboard-v1') {
@@ -2511,6 +2602,7 @@
       renderHeader();
       renderOverview();
       renderCandidates();
+      renderHistorySelections();
       renderStocks();
       renderPaper();
       renderResearch();

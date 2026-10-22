@@ -109,9 +109,10 @@ input,select{
   min-height:39px;border:1px solid #3a484f;background:#101619;
   color:var(--text);border-radius:4px;padding:8px 10px;
 }
-#stock-search,#selection-search{width:230px}
+#stock-search,#selection-search,#history-selection-search{width:230px}
 .toolbar-count{margin-left:auto;color:var(--muted);padding:9px 0}
 .selection-toolbar select{min-width:170px}
+.compact-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
 .hash-label{
   color:var(--muted);font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
   overflow-wrap:anywhere;text-align:right;margin-bottom:10px;
@@ -190,7 +191,7 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   .definition-grid{grid-template-columns:1fr}
   .toolbar{align-items:stretch}
   .toolbar label{width:100%}
-  #stock-search,#selection-search{width:100%}
+  #stock-search,#selection-search,#history-selection-search{width:100%}
   .toolbar-count{margin-left:0}
   .selection-toolbar .toolbar-count{width:100%}
   .hash-label{text-align:left}

@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261022-final-selection-v1">
+  <link rel="stylesheet" href="styles.css?v=20261023-selection-history-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261023-quarter-filter-v1" defer></script>
+  <script src="app.js?v=20261023-selection-history-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -117,6 +117,43 @@
         <div id="candidate-hash" class="hash-label">--</div>
         <div class="table-wrap candidate-table-wrap">
           <table id="candidate-table"></table>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>2024–2025 历史选股明细</h2>
+            <p>与 2026 相同的 T0 09:36 至 T+3 收盘修复口径；历史代码不提供图表跳转</p>
+          </div>
+          <span id="history-selection-integrity" class="status">--</span>
+        </div>
+        <div class="toolbar history-selection-toolbar">
+          <label>验证季度<select id="history-selection-period">
+            <option value="all">全部季度</option>
+            <option value="2024Q3">2024 第三季度</option>
+            <option value="2024Q4">2024 第四季度</option>
+            <option value="2025Q1">2025 第一季度</option>
+            <option value="2025Q2">2025 第二季度</option>
+            <option value="2025Q3">2025 第三季度</option>
+            <option value="2025Q4">2025 第四季度</option>
+          </select></label>
+          <label>验证结果<select id="history-selection-result">
+            <option value="all">全部结果</option>
+            <option value="large">最大修复 ≥ 15%</option>
+            <option value="hit">最大修复 10%–15%</option>
+            <option value="miss">最大修复 &lt; 10%</option>
+          </select></label>
+          <label>信号次数<select id="history-selection-repeat">
+            <option value="all">全部信号</option>
+            <option value="first">每只股票首次</option>
+            <option value="repeat">重复入选</option>
+          </select></label>
+          <label>搜索股票<input id="history-selection-search" type="search" placeholder="代码或名称"></label>
+          <span id="history-selection-count" class="toolbar-count">--</span>
+        </div>
+        <div id="history-selection-kpis" class="kpi-grid compact-kpis"></div>
+        <div class="table-wrap candidate-table-wrap">
+          <table id="history-selection-table"></table>
         </div>
       </section>
       <section class="panel warning-panel">
