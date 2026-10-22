@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261023-selection-history-v1">
+  <link rel="stylesheet" href="styles.css?v=20261023-selection-monitor-v2">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261023-selection-history-v1" defer></script>
+  <script src="app.js?v=20261023-selection-monitor-v2" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -104,7 +104,7 @@
         <div><span>冻结策略</span><strong id="selection-strategy">--</strong></div>
         <div><span>信息截止</span><strong id="selection-information-end">--</strong></div>
         <div><span>训练窗口</span><strong id="selection-training-window">--</strong></div>
-        <div><span>验证范围</span><strong id="selection-coverage">--</strong></div>
+        <div><span>评分更新</span><strong id="selection-coverage">--</strong></div>
       </section>
       <section class="panel">
         <div class="panel-head">
@@ -130,6 +130,8 @@
         <div class="toolbar history-selection-toolbar">
           <label>验证季度<select id="history-selection-period">
             <option value="all">全部季度</option>
+            <option value="2024Q1">2024 第一季度</option>
+            <option value="2024Q2">2024 第二季度</option>
             <option value="2024Q3">2024 第三季度</option>
             <option value="2024Q4">2024 第四季度</option>
             <option value="2025Q1">2025 第一季度</option>
@@ -142,6 +144,11 @@
             <option value="large">最大修复 ≥ 15%</option>
             <option value="hit">最大修复 10%–15%</option>
             <option value="miss">最大修复 &lt; 10%</option>
+          </select></label>
+          <label>样本性质<select id="history-selection-role">
+            <option value="all">全部样本</option>
+            <option value="training_in_sample_replay">2024H1 训练内回溯</option>
+            <option value="causal">开发评估与跨年复核</option>
           </select></label>
           <label>信号次数<select id="history-selection-repeat">
             <option value="all">全部信号</option>
@@ -158,7 +165,7 @@
       </section>
       <section class="panel warning-panel">
         <h2>验证边界</h2>
-        <p>本页验证的是选股后的修复机会，不是可成交收益。模型特征严格截止 09:35；“最大修复”按 T0 09:36 至 T+3 的盘中低点到随后收盘计算，不代表已确定买点或卖点。2026 为截至 10 月 9 日的盲测，不是完整年度；公司行为和后续交易日不足的记录按删失处理。</p>
+        <p>本页验证的是选股后的修复机会，不是可成交收益。模型特征严格截止 09:35；“最大修复”按 T0 09:36 至 T+3 的盘中低点到随后收盘计算，不代表已确定买点或卖点。2024H1 使用最终冻结模型反向评分，但样本参与过模型训练，只能用于形态观察，不能作为因果验证；2026 为截至 10 月 9 日的盲测，不是完整年度。公司行为和后续交易日不足的记录按删失处理。</p>
       </section>
     </section>
 

@@ -419,8 +419,8 @@
     const summary = payload.summary || {};
     const audit = payload.audit || {};
     $('#candidate-kpis').innerHTML = [
-      kpi('冻结信号', `${num(summary.signals)} 条`,
-        `${num(summary.unique_codes)} 只股票 · 2026 YTD`),
+      kpi('冻结信号', `${num(summary.displayed_signals || summary.signals)} 条`,
+        `盲测 ${num(summary.signals)} · 盘后增量 ${num(summary.post_freeze_signals || 0)}`),
       kpi('有效审计', `${num(summary.audited)} 条`,
         `删失 ${num((summary.right_censored || 0) + (summary.corporate_action_censored || 0))} 条`),
       kpi('≥10% 修复命中率', pct(summary.hit_rate_ge_10pct),
@@ -439,9 +439,12 @@
       payload.strategy?.information_end || '—';
     $('#selection-training-window').textContent =
       `${num(audit.training_rows)} 行 / ${num(audit.training_days)} 日`;
-    $('#selection-coverage').textContent =
-      (summary.coverage || []).map(value => String(value).replace(
-        /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')).join(' 至 ') || '—';
+    $('#selection-coverage').textContent = audit.monitor_through
+      ? `${String(audit.monitor_through).replace(
+        /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')} · 最新信号 ${
+        String(audit.latest_signal_day || '无').replace(
+          /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}`
+      : '等待 SuperMind 权威分钟数据';
     $('#selection-integrity').textContent =
       audit.hash_chain_verified ? '冻结链已核验' : '冻结链异常';
     $('#selection-integrity').className =
@@ -459,10 +462,19 @@
   function filteredHistorySelections() {
     const period = $('#history-selection-period').value;
     const result = $('#history-selection-result').value;
+    const role = $('#history-selection-role').value;
     const repeat = $('#history-selection-repeat').value;
     const query = $('#history-selection-search').value.trim().toLowerCase();
     return historySelectionRows().filter(row => {
       if (period !== 'all' && row.quarter !== period) return false;
+      if (
+        role === 'training_in_sample_replay'
+        && row.sample_role !== role
+      ) return false;
+      if (
+        role === 'causal'
+        && row.sample_role === 'training_in_sample_replay'
+      ) return false;
       if (query && !`${row.code}${row.name}`.toLowerCase().includes(query)) {
         return false;
       }
@@ -480,10 +492,37 @@
 
   function renderHistorySelectionTable() {
     const rows = filteredHistorySelections();
+    const audited = rows.filter(row => row.status === 'audited');
+    const hits = audited.filter(row => row.hit === true).length;
+    const large = audited.filter(
+      row => row.large_opportunity === true).length;
+    const uniqueCodes = new Set(rows.map(row => row.code)).size;
+    const role = $('#history-selection-role').value;
+    const roleNote = {
+      all: '混合展示 · 不作统一验证结论',
+      training_in_sample_replay: '训练内回溯 · 仅用于形态观察',
+      causal: '2024H2 开发评估 + 2025 跨年复核',
+    }[role];
+    $('#history-selection-kpis').innerHTML = [
+      kpi('当前信号', `${num(rows.length)} 条`,
+        `${num(uniqueCodes)} 只股票`),
+      kpi('有效审计', `${num(audited.length)} 条`, roleNote),
+      kpi('≥10% 修复命中率',
+        audited.length ? pct(hits / audited.length) : '—',
+        `${num(hits)} / ${num(audited.length)}`, 'up'),
+      kpi('≥15% 大机会占比',
+        audited.length ? pct(large / audited.length) : '—',
+        `${num(large)} / ${num(audited.length)}`, 'up'),
+    ].join('');
     $('#history-selection-count').textContent =
       `显示 ${num(rows.length)} / ${num(historySelectionRows().length)} 条`;
+    const roleLabels = {
+      training_in_sample_replay: '训练内回溯',
+      development_evaluation: '开发期评估',
+      crossyear_review: '跨年复核',
+    };
     $('#history-selection-table').innerHTML = `<thead><tr>
-      <th>信号日期</th><th>代码</th><th>名称</th><th>置信分差</th>
+      <th>信号日期</th><th>代码</th><th>名称</th><th>样本性质</th><th>置信分差</th>
       <th>T0 收盘修复</th><th>T+1 收盘修复</th>
       <th>T+2 收盘修复</th><th>T+3 收盘修复</th>
       <th>最大修复</th><th>验证结果</th><th>入选次数</th>
@@ -498,6 +537,8 @@
       return `<tr>
         <td>${esc(row.day)}</td><td>${esc(row.code)}</td>
         <td>${esc(row.name)}</td>
+        <td class="${row.sample_role === 'training_in_sample_replay'
+          ? 'neutral' : ''}">${esc(roleLabels[row.sample_role] || row.sample_role)}</td>
         <td>${num(row.normalized_margin, 3)}</td>
         <td class="${tone(sessions.T0)}">${optionalPct(sessions.T0)}</td>
         <td class="${tone(sessions.T1)}">${optionalPct(sessions.T1)}</td>
@@ -507,27 +548,11 @@
         <td class="${row.hit ? 'up' : 'down'}">${esc(status)}</td>
         <td>${esc(repeat)}</td>
       </tr>`;
-    }).join('') : emptyRow(11, '当前筛选条件没有历史信号')}</tbody>`;
+    }).join('') : emptyRow(12, '当前筛选条件没有历史信号')}</tbody>`;
   }
 
   function renderHistorySelections() {
     const payload = DATA.selection_history || {};
-    const summary = payload.summary || {};
-    const signals = Number(summary.signals || 0);
-    const audited = Number(summary.audited || 0);
-    $('#history-selection-kpis').innerHTML = [
-      kpi('历史信号', `${num(signals)} 条`,
-        `${num(summary.unique_codes)} 只股票 · 2024H2–2025`),
-      kpi('有效审计', `${num(audited)} 条`,
-        '统一 T0 至 T+3 修复口径'),
-      kpi('≥10% 修复命中率',
-        audited ? pct(summary.hits_ge_10pct / audited) : '—',
-        `${num(summary.hits_ge_10pct)} / ${num(audited)}`, 'up'),
-      kpi('≥15% 大机会占比',
-        audited
-          ? pct(summary.large_opportunities_ge_15pct / audited) : '—',
-        `${num(summary.large_opportunities_ge_15pct)} / ${num(audited)}`, 'up'),
-    ].join('');
     $('#history-selection-integrity').textContent =
       payload.sha256 ? '历史源已固化' : '历史源异常';
     $('#history-selection-integrity').className =
@@ -2519,6 +2544,7 @@
       final_selection_detail: 'V343逐股验证',
       final_selection_result: 'V343验证结论',
       final_selection_manifest: '2026股票清单',
+      final_selection_live: '冻结策略盘后增量',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
@@ -2558,7 +2584,8 @@
       'input', renderSelectionTable));
     [
       'history-selection-period', 'history-selection-result',
-      'history-selection-repeat', 'history-selection-search',
+      'history-selection-role', 'history-selection-repeat',
+      'history-selection-search',
     ].forEach(id => document.getElementById(id).addEventListener(
       'input', renderHistorySelectionTable));
     $('#stock-daily-tab').addEventListener(
