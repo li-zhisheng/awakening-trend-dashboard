@@ -2504,6 +2504,9 @@
         loadFirst(dataPaths('api/data', 'data.json')),
         loadFirst(dataPaths('api/paper', 'paper.json')),
       ]);
+      if (!DATA.final_selection && !staticHost) {
+        DATA = await loadFirst([`data.json?t=${Date.now()}`]);
+      }
       if (DATA.schema !== 'awakening-trend-dashboard-v1') {
         throw new Error('多空指标数据版本不兼容');
       }
