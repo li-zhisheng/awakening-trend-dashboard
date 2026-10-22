@@ -5,7 +5,6 @@
   let PAPER = null;
   let stockMarketState = null;
   let stockPage = 1;
-  let candidateScope = 'buyable';
   let monthlyStrategy = 'original';
   let dailyReturnMonth = '';
   const pageSize = 80;
@@ -31,6 +30,8 @@
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const pct = (value, digits = 2) => Number.isFinite(Number(value))
     ? `${(Number(value) * 100).toFixed(digits)}%` : '—';
+  const optionalPct = (value, digits = 2) =>
+    value === null || value === undefined ? '—' : pct(value, digits);
   const num = (value, digits = 0) => Number.isFinite(Number(value))
     ? Number(value).toLocaleString('zh-CN', {
       minimumFractionDigits: digits, maximumFractionDigits: digits,
@@ -321,186 +322,94 @@
     renderMonthlyOverview();
   }
 
-  function candidateDays() {
-    return DATA.daily_candidates?.days || [];
+  function selectionRows() {
+    return DATA.final_selection?.rows || [];
   }
 
-  function candidateOutcome(item, field) {
-    const value = item.evaluation?.[field];
-    return value === null || value === undefined ? '—' : pct(value);
-  }
-
-  function isBuyableCandidate(item) {
-    const selection = item?.selection || {};
-    if (selection.entry_status) {
-      const signalReturn = Number(selection.intraday_return);
-      return (
-        selection.entry_ready === true
-        && Number.isFinite(signalReturn)
-        && signalReturn <= .05
-        && (
-          signalReturn <= .03
-          || (
-            selection.entry_plan === 'pullback_then_stabilize'
-            && selection.pullback_seen === true
-          )
-        )
-      );
-    }
-    return selection.entry_eligible !== false;
-  }
-
-  function renderCandidateDate(value) {
-    const days = candidateDays();
-    const index = days.findIndex(day => day.date === value);
-    const day = index >= 0 ? days[index] : null;
-    const allRows = day?.candidates || [];
-    const buyableRows = allRows.filter(isBuyableCandidate);
-    const rows = candidateScope === 'all' ? allRows : buyableRows;
-    const input = $('#candidate-date');
-    input.value = value || '';
-    $('#candidate-prev').disabled = index <= 0;
-    $('#candidate-next').disabled = index < 0 || index >= days.length - 1;
-    $('#candidate-date-status').textContent = day
-      ? `${day.date} · ${day.mode === 'live_shadow'
-        ? `分钟级质量影子 · 更新 ${dt(day.updated_at)}`
-        : day.mode === 'historical_v6_backtest'
-          ? '旧历史候选档案 · 非当前一分钟V6'
-          : '交易日样本'}`
-      : value ? `${value} · 无交易日样本` : '暂无样本';
-
-    const evaluation = day?.evaluation || {};
-    const dynamicEntry = day?.entry_model?.mode === 'dynamic_shadow_only';
-    $('#candidate-kpis').innerHTML = [
-      kpi(
-        '当前可买机会',
-        `${num(buyableRows.length)} 只`,
-        dynamicEntry
-          ? `等待回落 ${num(day?.wait_pullback_count || 0)} · 全部观察 ${num(allRows.length)}`
-          : day?.mode === 'historical_v6_backtest'
-            ? `历史确认 ${num(buyableRows.length)} · 全部信号 ${num(allRows.length)}`
-            : `不可买 ${num(allRows.length - buyableRows.length)} · 全部观察 ${num(allRows.length)}`),
-      kpi('首次多头候选', `${num(day?.early_signal_count || 0)} 只`,
-        day?.mode === 'live_shadow'
-          && day.cadence === 'one_minute'
-          ? '首次出现即记录源时间与价格'
-          : '09:30–10:00 全市场因果回放'),
-      kpi('质量门通过', `${num(day?.quality_qualified_count || 0)} 只`,
-        '首点≤3% · 扰动稳定 · 趋势一致分≥0.65'),
-      kpi('信号批次', `${num(day?.batch_count || 0)} 批`,
-        day?.mode === 'live_shadow'
-          ? '同一扫描分钟横向比较'
-          : '旧历史研究批次'),
-      kpi('完整事后样本', `${num(evaluation.complete_count || 0)} 只`,
-        day?.mode === 'live_shadow'
-          ? '盘中名单尚无事后收益'
-          : `未成交 ${num(evaluation.unfilled_count || 0)} · 截尾 ${num(evaluation.censored_count || 0)}`),
-      kpi('最终收益≥10%', `${num(evaluation.return_winner_count || 0)} 只`,
-        '仅作事后验证'),
-      kpi('最大浮盈≥20%', `${num(evaluation.mfe_winner_count || 0)} 只`,
-        '仅作事后验证'),
-    ].join('');
-
-    document.querySelectorAll('[data-candidate-scope]').forEach(button => {
-      const active = button.dataset.candidateScope === candidateScope;
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-selected', String(active));
-    });
-    const statusLabel = {
-      complete: '验证完成',
-      unfilled: '下一周期未成交',
-      censored: '后续样本不足',
-      live_immediate_watch: '持续观察',
-      live_wait_pullback: '等待回落',
-      live_ready_shadow: '回落/走势企稳，仅影子就绪',
-      live_invalidated: '当前失效',
-      live_entry_ready_lost: '曾可买，当前不可买',
-      live_archive_recovered_incomplete: '旧档案恢复，状态证据不完整',
-      historical_complete: '历史确认，事后验证完成',
-      historical_censored: '历史确认，后续样本不足',
-      historical_signal_disappeared: '多点出现，确认前消失',
-      historical_ranked_out: '多点出现，当日排序未保留',
+  function selectionPeriodMatch(day, period) {
+    if (period === 'all') return true;
+    const compact = String(day || '').replaceAll('-', '');
+    const ranges = {
+      '2026H1': ['20260101', '20260630'],
+      '2026H2': ['20260701', '20261231'],
+      '2026Q1': ['20260101', '20260331'],
+      '2026Q2': ['20260401', '20260630'],
+      '2026Q3': ['20260701', '20260930'],
+      '2026Q4': ['20261001', '20261231'],
     };
-    const entryPlanLabel = {
-      stabilize_then_rank: '观察企稳后排序',
-      pullback_then_stabilize: '等待回落企稳',
-      reject_high_signal: '首点>5%永久不可买',
-      historical_next_5m_confirmation: '旧历史确认代理（非当前规则）',
+    const range = ranges[period];
+    return range ? compact >= range[0] && compact <= range[1] : true;
+  }
+
+  function filteredSelections() {
+    const period = $('#selection-period').value;
+    const result = $('#selection-result').value;
+    const repeat = $('#selection-repeat').value;
+    const query = $('#selection-search').value.trim().toLowerCase();
+    return selectionRows().filter(row => {
+      if (!selectionPeriodMatch(row.day, period)) return false;
+      if (query && !`${row.code}${row.name}`.toLowerCase().includes(query)) {
+        return false;
+      }
+      if (repeat === 'first' && row.sequence_no !== 1) return false;
+      if (repeat === 'repeat' && !row.is_repeat) return false;
+      if (result === 'censored' && row.status === 'audited') return false;
+      if (result === 'large' && row.large_opportunity !== true) return false;
+      if (
+        result === 'hit'
+        && !(row.hit === true && row.large_opportunity !== true)
+      ) return false;
+      if (result === 'miss' && !(row.status === 'audited' && row.hit === false)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function renderSelectionTable() {
+    const rows = filteredSelections();
+    $('#selection-count').textContent =
+      `显示 ${num(rows.length)} / ${num(selectionRows().length)} 条`;
+    const statusLabels = {
+      audited: '已审计',
+      right_censored: '后续交易日不足',
+      corporate_action: '公司行为删失',
     };
     $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号时间</th><th>代码</th><th>名称</th><th>行业/板块</th><th>信号</th>
-      <th>趋势质量分</th><th>机会风险辅助</th>
-      <th>+10%先于-5%</th><th>最大浮盈≥20%</th><th>最大浮亏≥5%</th>
-      <th>信号时涨幅</th><th>板块分</th><th>相对板块</th><th>资金确认</th>
-      <th>当前涨幅</th><th>峰值回撤</th><th>企稳分钟</th><th>动态入场计划</th>
-      <th>验证状态</th><th>最终收益</th>
-      <th>最大浮盈</th><th>最大浮亏</th>
-    </tr></thead><tbody>${rows.length ? rows.map(item => {
-      const selection = item.selection;
-      const outcome = item.evaluation || {};
-      const signalTime = selection.live_shadow
-        ? dt(selection.signal_at).split(' ')[1]
-        : clock(selection.signal_time);
-      const signalPrice = (
-        Number.isFinite(Number(selection.signal_price))
-      ) ? `<br><small>¥${num(selection.signal_price, 2)}</small>` : '';
-      const outcomeStatus = statusLabel[outcome.status] || outcome.status;
-      const displayStatus = (
-        selection.entry_eligible === false
-        && !selection.entry_status
-        && !String(outcome.status || '').startsWith('live_')
-      ) ? `首点>5%不可买 · ${outcomeStatus}` : outcomeStatus;
-      const entryPlan = entryPlanLabel[selection.entry_plan] || '—';
-      const statusAt = selection.entry_status_at
-        ? dt(selection.entry_status_at).split(' ')[1] : '';
-      const entryPrice = Number.isFinite(Number(outcome.entry_price))
-        ? ` ¥${num(outcome.entry_price, 2)}` : '';
-      const entryEvidence = outcome.entry_time
-        ? `<br><small>${clock(outcome.entry_time)}${entryPrice}</small>`
-        : statusAt ? `<br><small>${esc(statusAt)}</small>` : '';
-      const readyLostAt = selection.entry_ready_lost_at
-        ? dt(selection.entry_ready_lost_at).split(' ')[1] : '';
-      const readyLossMarker = selection.entry_ready_was_lost
-        ? `<br><span class="candidate-marker ready-lost">${
-          selection.entry_ready_currently_lost
-            ? `买点消失${readyLostAt ? ` ${esc(readyLostAt)}` : ''}`
-            : '买点曾消失，现已恢复'
-        }</span>`
-        : '';
-      return `<tr><td>${esc(signalTime)}${signalPrice}</td>
-        <td><button class="stock-link candidate-stock-link" data-code="${esc(selection.code)}" data-date="${esc(day.date)}">${esc(selection.code)}</button></td>
-        <td>${esc(selection.name)}</td>
-        <td>${esc(industryName(selection.industry))}</td>
-        <td class="up">${signalLabel(1, selection.strength)}</td>
-        <td>${selection.score == null ? '—' : num(selection.score, 3)}</td>
-        <td>${selection.opportunity_risk_score == null
-          ? '—' : num(selection.opportunity_risk_score, 3)}</td>
-        <td>${selection.profit_10_before_loss_5_probability == null
-          ? '—' : pct(selection.profit_10_before_loss_5_probability, 0)}</td>
-        <td>${selection.max_floating_profit_20_probability == null
-          ? '—' : pct(selection.max_floating_profit_20_probability, 0)}</td>
-        <td>${selection.max_floating_loss_5_probability == null
-          ? '—' : pct(selection.max_floating_loss_5_probability, 0)}</td>
-        <td class="${tone(selection.intraday_return)}">${pct(selection.intraday_return)}</td>
-        <td>${selection.industry_score == null ? '—' : pct(selection.industry_score, 0)}</td>
-        <td class="${tone(selection.stock_return_vs_industry)}">${selection.stock_return_vs_industry == null ? '—' : pct(selection.stock_return_vs_industry)}</td>
-        <td>${selection.capital_confirmation_score == null ? '—' : pct(selection.capital_confirmation_score, 0)}</td>
-        <td class="${tone(selection.current_return)}">${selection.current_return == null ? '—' : pct(selection.current_return)}</td>
-        <td class="${tone(selection.pullback_from_peak == null ? null : -selection.pullback_from_peak)}">${selection.pullback_from_peak == null ? '—' : pct(-selection.pullback_from_peak)}</td>
-        <td>${selection.stable_observations == null ? '—' : num(selection.stable_observations)}</td>
-        <td>${esc(entryPlan)}${entryEvidence}</td>
-        <td>${esc(displayStatus)}${readyLossMarker}</td>
-        <td class="${tone(outcome.return)}">${candidateOutcome(item, 'return')}</td>
-        <td class="${tone(outcome.max_floating_profit)}">${candidateOutcome(item, 'max_floating_profit')}</td>
-        <td class="${tone(outcome.max_floating_loss)}">${candidateOutcome(item, 'max_floating_loss')}</td></tr>`;
-    }).join('') : emptyRow(
-      22,
-      day
-        ? candidateScope === 'buyable'
-          ? '当日没有满足动态买入条件的股票'
-          : '当日没有股票进入观察池'
-        : '该日期没有交易日样本',
-    )}</tbody>`;
+      <th>信号日期</th><th>代码</th><th>名称</th><th>置信分差</th>
+      <th>T0 收盘修复</th><th>T+1 收盘修复</th>
+      <th>T+2 收盘修复</th><th>T+3 收盘修复</th>
+      <th>最大修复</th><th>验证结果</th><th>入选次数</th><th>行情</th>
+    </tr></thead><tbody>${rows.length ? rows.map(row => {
+      const sessions = row.session_close_recovery || {};
+      const status = row.status === 'audited'
+        ? row.large_opportunity
+          ? '≥15% 大机会'
+          : row.hit ? '≥10% 命中' : '<10% 未命中'
+        : statusLabels[row.status] || row.status;
+      const statusClass = row.status !== 'audited'
+        ? 'neutral' : row.hit ? 'up' : 'down';
+      const repeat = row.signal_count_for_code > 1
+        ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
+        : '首次且唯一';
+      return `<tr>
+        <td>${esc(row.day)}</td>
+        <td><button class="stock-link candidate-stock-link"
+          data-code="${esc(row.code)}" data-date="${esc(row.day)}">${esc(row.code)}</button></td>
+        <td>${esc(row.name)}</td>
+        <td>${num(row.normalized_margin, 3)}</td>
+        <td class="${tone(sessions.T0)}">${optionalPct(sessions.T0)}</td>
+        <td class="${tone(sessions.T1)}">${optionalPct(sessions.T1)}</td>
+        <td class="${tone(sessions.T2)}">${optionalPct(sessions.T2)}</td>
+        <td class="${tone(sessions.T3)}">${optionalPct(sessions.T3)}</td>
+        <td class="${tone(row.maximum_close_recovery)}">${optionalPct(row.maximum_close_recovery)}</td>
+        <td class="${statusClass}">${esc(status)}</td>
+        <td>${esc(repeat)}</td>
+        <td><button class="selection-chart-button candidate-stock-link"
+          type="button" title="查看该信号日的日K与分钟走势"
+          data-code="${esc(row.code)}" data-date="${esc(row.day)}">走势图</button></td>
+      </tr>`;
+    }).join('') : emptyRow(12, '当前筛选条件没有信号')}</tbody>`;
     document.querySelectorAll('.candidate-stock-link').forEach(button => {
       button.addEventListener('click', () =>
         openStock(button.dataset.code, button.dataset.date));
@@ -508,42 +417,41 @@
   }
 
   function renderCandidates() {
-    const payload = DATA.daily_candidates || {};
+    const payload = DATA.final_selection || {};
     const summary = payload.summary || {};
-    const days = candidateDays();
-    const input = $('#candidate-date');
-    if (days.length) {
-      input.min = days[0].date;
-      input.max = days[days.length - 1].date;
-    }
-    $('#candidate-hash').textContent = payload.selection_sha256
-      ? `${num(summary.trading_days)} 日 · ${num(summary.candidate_count)} 只 · 选择哈希 ${payload.selection_sha256.slice(0, 16)}`
-      : '选择哈希 —';
-    const latest = days.at(-1);
-    $('#candidate-active-policy').textContent = '统一 v6';
-    $('#candidate-active-days').textContent =
-      `${num(days.length)} 日`;
-    $('#candidate-latest-signals').textContent =
-      `${num(latest?.early_signal_count || 0)} 只`;
-    $('#candidate-latest-ready').textContent =
-      `${num(latest?.ready_candidate_count || 0)} 只`;
-    const initial = (
-      latest?.mode === 'live_shadow'
-      && latest.quality_selector_active === false
-      && !latest.candidate_count
-    )
-      ? [...days].reverse().find(day =>
-        day.eligible_candidate_count > 0)
-      : latest;
-    renderCandidateDate(initial?.date || '');
-  }
-
-  function moveCandidateDate(offset) {
-    const days = candidateDays();
-    const index = days.findIndex(
-      day => day.date === $('#candidate-date').value);
-    const target = days[index + offset];
-    if (target) renderCandidateDate(target.date);
+    const audit = payload.audit || {};
+    $('#candidate-kpis').innerHTML = [
+      kpi('冻结信号', `${num(summary.signals)} 条`,
+        `${num(summary.unique_codes)} 只股票 · 2026 YTD`),
+      kpi('有效审计', `${num(summary.audited)} 条`,
+        `删失 ${num((summary.right_censored || 0) + (summary.corporate_action_censored || 0))} 条`),
+      kpi('≥10% 修复命中率', pct(summary.hit_rate_ge_10pct),
+        `${num(summary.hits_ge_10pct)} / ${num(summary.audited)}`, 'up'),
+      kpi('≥15% 大机会占比', pct(summary.large_opportunity_rate_ge_15pct),
+        `${num(summary.large_opportunities_ge_15pct)} / ${num(summary.audited)}`, 'up'),
+      kpi('每股首次信号命中', pct(summary.first_signal_hit_rate_ge_10pct),
+        `${num(summary.first_signal_hits_ge_10pct)} / ${num(summary.audited_unique_codes)}`),
+      kpi('95% 置信区间',
+        `${pct(summary.confidence_interval_95?.[0])}–${pct(summary.confidence_interval_95?.[1])}`,
+        '信号级 Wilson 区间'),
+    ].join('');
+    $('#selection-strategy').textContent =
+      payload.strategy?.operational_identity || '—';
+    $('#selection-information-end').textContent =
+      payload.strategy?.information_end || '—';
+    $('#selection-training-window').textContent =
+      `${num(audit.training_rows)} 行 / ${num(audit.training_days)} 日`;
+    $('#selection-coverage').textContent =
+      (summary.coverage || []).map(value => String(value).replace(
+        /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')).join(' 至 ') || '—';
+    $('#selection-integrity').textContent =
+      audit.hash_chain_verified ? '冻结链已核验' : '冻结链异常';
+    $('#selection-integrity').className =
+      `status ${audit.hash_chain_verified ? 'ok' : 'bad'}`;
+    $('#candidate-hash').textContent = payload.freeze_sha256
+      ? `V344 冻结哈希 ${payload.freeze_sha256}`
+      : 'V344 冻结哈希 —';
+    renderSelectionTable();
   }
 
   function filteredStocks() {
@@ -731,8 +639,7 @@
     const index = bars.findIndex(row =>
       String(row[0]).replaceAll('-', '') === date);
     const candidate = stockCandidateForDate(daily?.code, date);
-    const candidatePreviousClose = Number(
-      candidate?.selection?.previous_close);
+    const candidatePreviousClose = NaN;
     if (index < 0) {
       return {
         close: null,
@@ -756,12 +663,8 @@
   function stockCandidateForDate(code, date) {
     const normalized = String(date || '').replace(
       /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
-    const days = (
-      typeof DATA === 'object'
-      && Array.isArray(DATA?.daily_candidates?.days)
-    ) ? DATA.daily_candidates.days : [];
-    return days.find(day => day.date === normalized)?.candidates
-      ?.find(item => item.selection?.code === code) || null;
+    return selectionRows().find(
+      row => row.day === normalized && row.code === code) || null;
   }
 
   function intradayMarksForDate(daily, date) {
@@ -1198,10 +1101,13 @@
       const long = Number(direction) === 1;
       const strong = strength === 'strong';
       const strategyBuy = kind === 'strategy_buy';
-      const label = strategyBuy
-        ? '买点' : signalLabel(direction, strength);
+      const finalSelection = kind === 'final_selection';
+      const label = finalSelection
+        ? '选股' : strategyBuy ? '买点' : signalLabel(direction, strength);
       const color = strategyBuy
         ? '#ef6666'
+        : finalSelection
+          ? '#e5b94f'
         : long
         ? (strong ? signalColors.strongLong : signalColors.weakLong)
         : (strong ? signalColors.strongShort : signalColors.weakShort);
@@ -1260,36 +1166,15 @@
     const existingLongDates = new Set(
       result.filter(mark => Number(mark.direction) === 1)
         .map(mark => dates[mark.coord[0]]));
-    for (const day of candidateDays()) {
-      for (const item of day.candidates || []) {
-        const selection = item.selection || {};
-        if (
-          selection.code !== stockMarketState?.code
-        ) continue;
-        const index = dates.indexOf(day.date);
-        if (index < 0) continue;
-        if (!existingLongDates.has(day.date)) {
-          const label = signalLabel(1, selection.strength);
-          const mark = makeMark(
-            index, 1, selection.strength,
-            selection.retention_probability, `机会${label}`);
-          if (mark) result.push(mark);
-          existingLongDates.add(day.date);
-        }
-        const entryPrice = Number(
-          selection.strategy_entry_price
-          || item.evaluation?.entry_price);
-        if (
-          selection.entry_ready === true
-          && Number.isFinite(entryPrice)
-        ) {
-          const buy = makeMark(
-            index, 1, 'strong',
-            selection.retention_probability,
-            '策略买点', 'strategy_buy', entryPrice);
-          if (buy) result.push(buy);
-        }
-      }
+    for (const selection of selectionRows()) {
+      if (selection.code !== stockMarketState?.code) continue;
+      const index = dates.indexOf(selection.day);
+      if (index < 0 || existingLongDates.has(selection.day)) continue;
+      const mark = makeMark(
+        index, 1, 'strong', selection.normalized_margin,
+        '策略选股', 'final_selection');
+      if (mark) result.push(mark);
+      existingLongDates.add(selection.day);
     }
     return result;
   }
@@ -1553,50 +1438,26 @@
     const candidate = stockCandidateForDate(state.code, date);
     const marks = [...(rawMarks || [])];
     if (candidate) {
-      const selection = candidate.selection;
+      const signalTime = '0935';
       const existingLong = marks.findIndex(mark =>
         Number(mark[1]) === 1
-        && mark[0] === selection.signal_time);
+        && mark[0] === signalTime);
       if (existingLong >= 0) {
         marks[existingLong] = [
           ...marks[existingLong].slice(0, 5), 'first_long'];
       } else {
         let signalIndex = points.findIndex(
-          point => point[0] === selection.signal_time);
+          point => point[0] === signalTime);
         if (signalIndex < 0) {
           signalIndex = points.findIndex(
-            point => point[0] > selection.signal_time);
+            point => point[0] > signalTime);
         }
         if (signalIndex >= 0) {
           marks.push([
-            points[signalIndex][0], 1, selection.strength,
-            selection.retention_probability,
-            Number(selection.signal_price) || prices[signalIndex],
-            'first_long',
-          ]);
-        }
-      }
-      const outcome = candidate.evaluation || {};
-      const entryTime = (
-        selection.strategy_entry_time || outcome.entry_time);
-      const entryPrice = Number(
-        selection.strategy_entry_price || outcome.entry_price);
-      if (
-        selection.entry_ready === true
-        && entryTime
-        && Number.isFinite(entryPrice)
-      ) {
-        let entryIndex = points.findIndex(
-          point => point[0] === entryTime);
-        if (entryIndex < 0) {
-          entryIndex = points.findIndex(
-            point => point[0] > entryTime);
-        }
-        if (entryIndex >= 0) {
-          marks.push([
-            points[entryIndex][0], 1, 'strong',
-            selection.retention_probability,
-            entryPrice, 'strategy_buy',
+            points[signalIndex][0], 1, 'strong',
+            candidate.normalized_margin,
+            prices[signalIndex],
+            'final_selection',
           ]);
         }
       }
@@ -1614,13 +1475,17 @@
       const kind = mark[5] || 'formula_signal';
       const firstLong = kind === 'first_long';
       const strategyBuy = kind === 'strategy_buy';
+      const finalSelection = kind === 'final_selection';
       const label = (
-        firstLong ? '首次多'
+        finalSelection ? '策略选股'
+        : firstLong ? '首次多'
         : strategyBuy ? '买点'
         : signalLabel(mark[1], mark[2]));
       const price = Number(mark[4]);
       const change = (price / previousClose - 1) * 100;
-      const color = firstLong
+      const color = finalSelection
+        ? '#e5b94f'
+        : firstLong
         ? '#e5b94f'
         : strategyBuy
           ? '#ef6666'
@@ -2525,9 +2390,14 @@
       ['推荐历史入场代理', contracts.recommended_history_entry],
       ['实时成交', contracts.live_entry],
       ['真实交易控制', contracts.live_controls_trading ? '已启用' : '未启用，只读模拟'],
-      ['机会观察池', DATA.daily_candidates?.contract?.selection],
-      ['观察池信号分类', DATA.daily_candidates?.contract?.signal_strength],
-      ['未来收益参与选择', DATA.daily_candidates?.contract?.outcomes_used_for_selection ? '是' : '否'],
+      ['冻结选股策略',
+        DATA.final_selection?.strategy?.operational_identity],
+      ['选股信息截止',
+        DATA.final_selection?.strategy?.information_end],
+      ['未来收益参与选股',
+        DATA.final_selection?.audit?.selection_outcomes_used ? '是' : '否'],
+      ['选股验证指标',
+        DATA.final_selection?.opportunity_definition?.metric],
       ['全天风险门', DATA.research?.signal_quality?.entry_contract?.guard],
       ['全天风险门成交', DATA.research?.signal_quality?.entry_contract?.fill],
       ['收益模型控制买入',
@@ -2563,6 +2433,11 @@
       quality_selection: '优质多头影子筛选',
       winner_shadow: '即时影子',
       candidate_history: 'v6历史机会',
+      final_selection_freeze: 'V344策略冻结',
+      final_selection_signals: 'V343冻结信号',
+      final_selection_detail: 'V343逐股验证',
+      final_selection_result: 'V343验证结论',
+      final_selection_manifest: '2026股票清单',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
@@ -2595,17 +2470,11 @@
     });
     $('#stock-prev').addEventListener('click', () => { stockPage -= 1; renderStocks(); });
     $('#stock-next').addEventListener('click', () => { stockPage += 1; renderStocks(); });
-    $('#candidate-date').addEventListener(
-      'change', event => renderCandidateDate(event.target.value));
-    $('#candidate-prev').addEventListener(
-      'click', () => moveCandidateDate(-1));
-    $('#candidate-next').addEventListener(
-      'click', () => moveCandidateDate(1));
-    document.querySelectorAll('[data-candidate-scope]').forEach(button =>
-      button.addEventListener('click', () => {
-        candidateScope = button.dataset.candidateScope;
-        renderCandidateDate($('#candidate-date').value);
-      }));
+    [
+      'selection-period', 'selection-result',
+      'selection-repeat', 'selection-search',
+    ].forEach(id => document.getElementById(id).addEventListener(
+      'input', renderSelectionTable));
     $('#stock-daily-tab').addEventListener(
       'click', () => setStockMarketView('daily'));
     $('#stock-minute-tab').addEventListener(

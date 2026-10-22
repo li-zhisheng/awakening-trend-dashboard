@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261016-daily-bars-v1">
+  <link rel="stylesheet" href="styles.css?v=20261022-final-selection-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261016-daily-bars-v1" defer></script>
+  <script src="app.js?v=20261022-final-selection-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -28,7 +28,7 @@
 
   <nav class="view-tabs" aria-label="多空指标数据视图">
     <button class="active" data-view="overview" type="button">总览</button>
-    <button data-view="candidates" type="button">机会观察</button>
+    <button data-view="candidates" type="button">策略选股</button>
     <button data-view="stocks" type="button">个股回测</button>
     <button data-view="paper" type="button">实盘模拟</button>
     <button data-view="research" type="button">信号研究</button>
@@ -76,29 +76,45 @@
     </section>
 
     <section id="view-candidates" class="view">
-      <div class="toolbar candidate-toolbar">
-        <button id="candidate-prev" type="button" title="上一交易日" aria-label="上一交易日">←</button>
-        <label>交易日期<input id="candidate-date" type="date"></label>
-        <button id="candidate-next" type="button" title="下一交易日" aria-label="下一交易日">→</button>
-        <span id="candidate-date-status" class="toolbar-count">--</span>
+      <div class="toolbar selection-toolbar">
+        <label>验证时段<select id="selection-period">
+          <option value="all">全部时段</option>
+          <option value="2026H1">2026 上半年</option>
+          <option value="2026H2">2026 下半年至今</option>
+          <option value="2026Q1">2026 第一季度</option>
+          <option value="2026Q2">2026 第二季度</option>
+          <option value="2026Q3">2026 第三季度</option>
+          <option value="2026Q4">2026 第四季度至今</option>
+        </select></label>
+        <label>验证结果<select id="selection-result">
+          <option value="all">全部结果</option>
+          <option value="large">最大修复 ≥ 15%</option>
+          <option value="hit">最大修复 10%–15%</option>
+          <option value="miss">最大修复 &lt; 10%</option>
+          <option value="censored">删失，暂不评价</option>
+        </select></label>
+        <label>信号次数<select id="selection-repeat">
+          <option value="all">全部信号</option>
+          <option value="first">每只股票首次</option>
+          <option value="repeat">重复入选</option>
+        </select></label>
+        <label>搜索股票<input id="selection-search" type="search" placeholder="代码或名称"></label>
+        <span id="selection-count" class="toolbar-count">--</span>
       </div>
       <div id="candidate-kpis" class="kpi-grid"></div>
-      <section class="status-band candidate-summary">
-        <div><span>活动策略</span><strong id="candidate-active-policy">--</strong></div>
-        <div><span>v6交易日</span><strong id="candidate-active-days">--</strong></div>
-        <div><span>最新首点</span><strong id="candidate-latest-signals">--</strong></div>
-        <div><span>最新动态就绪</span><strong id="candidate-latest-ready">--</strong></div>
+      <section class="status-band selection-summary">
+        <div><span>冻结策略</span><strong id="selection-strategy">--</strong></div>
+        <div><span>信息截止</span><strong id="selection-information-end">--</strong></div>
+        <div><span>训练窗口</span><strong id="selection-training-window">--</strong></div>
+        <div><span>验证范围</span><strong id="selection-coverage">--</strong></div>
       </section>
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>动态买入机会</h2>
-            <p>默认只显示连续企稳的低追高质量信号；未就绪项保留在观察池</p>
+            <h2>冻结策略选股明细</h2>
+            <p>逐只查看信号日形态；点击代码或走势图可打开对应日期行情</p>
           </div>
-          <div class="segmented" role="tablist" aria-label="机会范围">
-            <button class="active" type="button" data-candidate-scope="buyable" role="tab" aria-selected="true">可买</button>
-            <button type="button" data-candidate-scope="all" role="tab" aria-selected="false">全部观察</button>
-          </div>
+          <span id="selection-integrity" class="status">--</span>
         </div>
         <div id="candidate-hash" class="hash-label">--</div>
         <div class="table-wrap candidate-table-wrap">
@@ -107,7 +123,7 @@
       </section>
       <section class="panel warning-panel">
         <h2>验证边界</h2>
-        <p>动态入场状态只作前瞻影子验证，不控制交易。首点涨幅不超过 3%、扰动稳定且趋势一致分达标后才进入观察；连续两分钟保持多头且价格未显著走弱才标记就绪。机会风险、板块和相对强度仅作辅助分，不再作为硬门槛。</p>
+        <p>本页验证的是选股后的修复机会，不是可成交收益。模型特征严格截止 09:35；“最大修复”按 T0 09:36 至 T+3 的盘中低点到随后收盘计算，不代表已确定买点或卖点。2026 为截至 10 月 9 日的盲测，不是完整年度；公司行为和后续交易日不足的记录按删失处理。</p>
       </section>
     </section>
 

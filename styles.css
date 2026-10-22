@@ -109,21 +109,17 @@ input,select{
   min-height:39px;border:1px solid #3a484f;background:#101619;
   color:var(--text);border-radius:4px;padding:8px 10px;
 }
-#stock-search{width:230px}
+#stock-search,#selection-search{width:230px}
 .toolbar-count{margin-left:auto;color:var(--muted);padding:9px 0}
-.candidate-toolbar{align-items:center}
-.candidate-toolbar label{display:flex;align-items:center;gap:10px}
-.candidate-toolbar button{width:40px;height:40px;padding:0;font-size:20px}
+.selection-toolbar select{min-width:170px}
 .hash-label{
   color:var(--muted);font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
-  overflow-wrap:anywhere;text-align:right;
+  overflow-wrap:anywhere;text-align:right;margin-bottom:10px;
 }
 .candidate-table-wrap{max-height:680px}
-.candidate-marker{
-  display:inline-block;margin-top:5px;padding:2px 5px;
-  border:1px solid var(--amber);border-radius:3px;
-  color:var(--amber);font-size:11px;line-height:1.4;
-  white-space:nowrap;
+.selection-chart-button{
+  padding:5px 9px;border-color:#3f6f78;background:#13242a;
+  color:#8edce0;font-size:12px;
 }
 .stock-table-wrap{max-height:660px}
 .stock-link{border:0;background:none;padding:0;color:#76ced2;text-decoration:underline;text-underline-offset:3px}
@@ -194,11 +190,9 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   .definition-grid{grid-template-columns:1fr}
   .toolbar{align-items:stretch}
   .toolbar label{width:100%}
-  .candidate-toolbar label{width:auto;flex:1}
-  .candidate-toolbar label input{min-width:0;width:100%}
-  #stock-search{width:100%}
+  #stock-search,#selection-search{width:100%}
   .toolbar-count{margin-left:0}
-  .candidate-toolbar .toolbar-count{width:100%}
+  .selection-toolbar .toolbar-count{width:100%}
   .hash-label{text-align:left}
   .stock-market-toolbar{align-items:stretch}
   #stock-minute-nav{width:100%}
