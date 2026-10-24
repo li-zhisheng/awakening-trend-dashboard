@@ -42,6 +42,8 @@
     })}` : '—';
   const dt = (value) => value
     ? String(value).replace('T', ' ').replace(/\+08:00$/, '') : '—';
+  const ymd = (value) => String(value || '—').replace(
+    /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
   const clock = (value) => /^\d{4}$/.test(String(value || ''))
     ? `${String(value).slice(0, 2)}:${String(value).slice(2)}`
     : String(value || '—');
@@ -418,6 +420,7 @@
     const payload = DATA.final_selection || {};
     const summary = payload.summary || {};
     const audit = payload.audit || {};
+    const sync = DATA.strategy_hub?.selection_sync || {};
     $('#candidate-kpis').innerHTML = [
       kpi('冻结信号', `${num(summary.displayed_signals || summary.signals)} 条`,
         `盲测 ${num(summary.signals)} · 盘后增量 ${num(summary.post_freeze_signals || 0)}`),
@@ -439,12 +442,29 @@
       payload.strategy?.information_end || '—';
     $('#selection-training-window').textContent =
       `${num(audit.training_rows)} 行 / ${num(audit.training_days)} 日`;
-    $('#selection-coverage').textContent = audit.monitor_through
-      ? `${String(audit.monitor_through).replace(
-        /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')} · 最新信号 ${
-        String(audit.latest_signal_day || '无').replace(
-          /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}`
+    const authoritativeDay = sync.latest_authoritative_day
+      || audit.monitor_through;
+    const latestSignalDay = sync.latest_displayed_signal_day
+      || audit.latest_signal_day;
+    $('#selection-coverage').textContent = authoritativeDay
+      ? `${ymd(authoritativeDay)} · 最新信号 ${ymd(
+        latestSignalDay || '无')}`
       : '等待 SuperMind 权威分钟数据';
+    const syncStatus = $('#selection-sync-status');
+    if (sync.status && sync.status !== 'ready') {
+      syncStatus.hidden = false;
+      $('#selection-sync-state').textContent =
+        sync.status === 'blocked_supermind_maintenance'
+          ? 'SuperMind 维护阻塞' : '选股同步异常';
+      $('#selection-sync-detail').textContent =
+        `权威数据至 ${ymd(authoritativeDay)} · 待补 ${
+          num(sync.pending_days?.length || 0)} 个交易日 / ${
+          num(sync.pending_stock_days || 0)} 股票日`;
+      $('#selection-sync-updated').textContent =
+        `状态更新 ${dt(sync.updated_at)}`;
+    } else {
+      syncStatus.hidden = true;
+    }
     $('#selection-integrity').textContent =
       audit.hash_chain_verified ? '冻结链已核验' : '冻结链异常';
     $('#selection-integrity').className =

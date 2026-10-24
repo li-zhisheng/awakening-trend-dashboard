@@ -134,6 +134,15 @@ input,select{
 .status-band div:last-child{border-right:0}
 .status-band span{display:block;color:var(--muted);font-size:12px}
 .status-band strong{display:block;margin-top:5px;overflow-wrap:anywhere}
+.selection-sync-status{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  min-height:42px;margin:-2px 0 14px;padding:9px 12px;
+  border:1px solid #705d2e;border-left:4px solid var(--amber);
+  border-radius:4px;background:#292416;color:#e2d5aa;font-size:12px;
+}
+.selection-sync-status strong{color:#f0c96a}
+.selection-sync-status span{overflow-wrap:anywhere}
+.selection-sync-status time{color:var(--muted);white-space:nowrap}
 .definition-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .definition{
   border-left:3px solid var(--cyan);background:var(--panel-2);
@@ -202,6 +211,8 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   #stock-market-status{width:100%;margin-left:0}
   .stock-market-chart{height:340px}
   .status-band{grid-template-columns:1fr}
+  .selection-sync-status{grid-template-columns:1fr;gap:4px}
+  .selection-sync-status time{white-space:normal}
   .status-band div{border-right:0;border-bottom:1px solid var(--line)}
   .status-band div:last-child{border-bottom:0}
   .status-band div:nth-child(2){border-bottom:1px solid var(--line)}
