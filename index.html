@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261024-selection-sync-v3">
+  <link rel="stylesheet" href="styles.css?v=20261026-v421">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261024-selection-sync-v3" defer></script>
+  <script src="app.js?v=20261026-v421" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -79,17 +79,16 @@
       <div class="toolbar selection-toolbar">
         <label>验证季度<select id="selection-period">
           <option value="all">全部季度</option>
-          <option value="2026Q1">2026 第一季度</option>
-          <option value="2026Q2">2026 第二季度</option>
-          <option value="2026Q3">2026 第三季度</option>
-          <option value="2026Q4">2026 第四季度至今</option>
+          <option value="2024Q1">2024 第一季度</option>
+          <option value="2024Q2">2024 第二季度</option>
+          <option value="2024Q3">2024 第三季度</option>
+          <option value="2024Q4">2024 第四季度</option>
         </select></label>
         <label>验证结果<select id="selection-result">
           <option value="all">全部结果</option>
-          <option value="large">最大修复 ≥ 15%</option>
-          <option value="hit">最大修复 10%–15%</option>
-          <option value="miss">最大修复 &lt; 10%</option>
-          <option value="censored">删失，暂不评价</option>
+          <option value="large">5日最大浮盈 ≥ 10%</option>
+          <option value="hit">5日最大浮盈 5%–10%</option>
+          <option value="miss">5日最大浮盈 &lt; 5%</option>
         </select></label>
         <label>信号次数<select id="selection-repeat">
           <option value="all">全部信号</option>
@@ -101,10 +100,10 @@
       </div>
       <div id="candidate-kpis" class="kpi-grid"></div>
       <section class="status-band selection-summary">
-        <div><span>冻结策略</span><strong id="selection-strategy">--</strong></div>
+        <div><span>展示策略</span><strong id="selection-strategy">--</strong></div>
         <div><span>信息截止</span><strong id="selection-information-end">--</strong></div>
-        <div><span>训练窗口</span><strong id="selection-training-window">--</strong></div>
-        <div><span>评分更新</span><strong id="selection-coverage">--</strong></div>
+        <div><span>执行口径</span><strong id="selection-training-window">--</strong></div>
+        <div><span>验证边界</span><strong id="selection-coverage">--</strong></div>
       </section>
       <div id="selection-sync-status" class="selection-sync-status" hidden>
         <strong id="selection-sync-state">--</strong>
@@ -114,8 +113,8 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>冻结策略选股明细</h2>
-            <p>逐只查看信号日形态；点击代码或走势图可打开对应日期行情</p>
+            <h2>V421 实际成交与五日路径</h2>
+            <p>按真实入场价展示收盘路径、最大浮盈浮亏与账户实际退出</p>
           </div>
           <span id="selection-integrity" class="status">--</span>
         </div>
@@ -124,7 +123,7 @@
           <table id="candidate-table"></table>
         </div>
       </section>
-      <section class="panel">
+      <section id="history-selection-panel" class="panel">
         <div class="panel-head">
           <div>
             <h2>2024–2025 历史选股明细</h2>
@@ -170,7 +169,7 @@
       </section>
       <section class="panel warning-panel">
         <h2>验证边界</h2>
-        <p>本页验证的是选股后的修复机会，不是可成交收益。模型特征严格截止 09:35；“最大修复”按 T0 09:36 至 T+3 的盘中低点到随后收盘计算，不代表已确定买点或卖点。2024H1 使用最终冻结模型反向评分，但样本参与过模型训练，只能用于形态观察，不能作为因果验证；2026 为截至 10 月 9 日的盲测，不是完整年度。公司行为和后续交易日不足的记录按删失处理。</p>
+        <p id="selection-boundary-note">V421 仅是 2024 已暴露数据上的后验开发候选，未通过预注册 H1 门槛，也未通过 2025 独立验证。本页用于检查具体股票质量，不代表生产 V338 已被替换或策略已晋级。</p>
       </section>
     </section>
 

@@ -44,8 +44,9 @@
     ? String(value).replace('T', ' ').replace(/\+08:00$/, '') : '—';
   const ymd = (value) => String(value || '—').replace(
     /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
-  const clock = (value) => /^\d{4}$/.test(String(value || ''))
-    ? `${String(value).slice(0, 2)}:${String(value).slice(2)}`
+  const clock = (value) => /^\d{3,4}$/.test(String(value || ''))
+    ? `${String(value).padStart(4, '0').slice(0, 2)}:${
+      String(value).padStart(4, '0').slice(2)}`
     : String(value || '—');
   const industryName = value =>
     String(value || '').replace(/^[A-Z]\d{2}/, '').trim() || '—';
@@ -328,10 +329,19 @@
     return DATA.final_selection?.rows || [];
   }
 
+  function isV421Selection() {
+    return DATA.final_selection?.schema
+      === 'awakening-return500-v421-dashboard-selection-v1';
+  }
+
   function selectionPeriodMatch(day, period) {
     if (period === 'all') return true;
     const compact = String(day || '').replaceAll('-', '');
     const ranges = {
+      '2024Q1': ['20240101', '20240331'],
+      '2024Q2': ['20240401', '20240630'],
+      '2024Q3': ['20240701', '20240930'],
+      '2024Q4': ['20241001', '20241231'],
       '2026Q1': ['20260101', '20260331'],
       '2026Q2': ['20260401', '20260630'],
       '2026Q3': ['20260701', '20260930'],
@@ -353,6 +363,15 @@
       }
       if (repeat === 'first' && row.sequence_no !== 1) return false;
       if (repeat === 'repeat' && !row.is_repeat) return false;
+      if (isV421Selection()) {
+        const maximum = Number(row.max_floating_profit_5d);
+        if (result === 'large' && !(maximum >= .10)) return false;
+        if (result === 'hit' && !(maximum >= .05 && maximum < .10)) {
+          return false;
+        }
+        if (result === 'miss' && !(maximum < .05)) return false;
+        return true;
+      }
       if (result === 'censored' && row.status === 'audited') return false;
       if (result === 'large' && row.large_opportunity !== true) return false;
       if (
@@ -370,6 +389,42 @@
     const rows = filteredSelections();
     $('#selection-count').textContent =
       `显示 ${num(rows.length)} / ${num(selectionRows().length)} 条`;
+    if (isV421Selection()) {
+      const reasonLabels = {
+        take_profit: '+5%止盈',
+        stop_loss: '-3%止损',
+        fallback_close: '14:49兜底',
+      };
+      $('#candidate-table').innerHTML = `<thead><tr>
+        <th>入场日期</th><th>代码</th><th>名称</th>
+        <th>确认 / 成交</th><th>成交价</th>
+        <th>T0 收盘</th><th>T+1 收盘</th><th>T+3 收盘</th><th>T+5 收盘</th>
+        <th>5日最大浮盈</th><th>5日最大浮亏</th>
+        <th>实际退出</th><th>单笔净收益</th><th>入选次数</th>
+      </tr></thead><tbody>${rows.length ? rows.map(row => {
+        const closes = row.close_returns || {};
+        const reasons = String(row.exit_reason || '').split('+')
+          .map(reason => reasonLabels[reason] || reason).join(' / ');
+        const repeat = row.signal_count_for_code > 1
+          ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
+          : '首次且唯一';
+        return `<tr>
+          <td>${esc(row.day)}</td><td>${esc(row.code)}</td><td>${esc(row.name)}</td>
+          <td>${esc(clock(row.confirmation_clock))} / ${esc(clock(row.entry_clock))}</td>
+          <td>${num(row.entry_price, 2)}</td>
+          <td class="${tone(closes.T0)}">${optionalPct(closes.T0)}</td>
+          <td class="${tone(closes['T+1'])}">${optionalPct(closes['T+1'])}</td>
+          <td class="${tone(closes['T+3'])}">${optionalPct(closes['T+3'])}</td>
+          <td class="${tone(closes['T+5'])}">${optionalPct(closes['T+5'])}</td>
+          <td class="${tone(row.max_floating_profit_5d)}">${optionalPct(row.max_floating_profit_5d)}</td>
+          <td class="${tone(row.max_floating_loss_5d)}">${optionalPct(row.max_floating_loss_5d)}</td>
+          <td>${esc(row.exit_day)} ${esc(clock(row.exit_clock))}<br>${esc(reasons)}</td>
+          <td class="${tone(row.net_return)}">${optionalPct(row.net_return)}</td>
+          <td>${esc(repeat)}</td>
+        </tr>`;
+      }).join('') : emptyRow(14, '当前筛选条件没有成交')}</tbody>`;
+      return;
+    }
     const statusLabels = {
       audited: '已审计',
       right_censored: '后续交易日不足',
@@ -421,6 +476,42 @@
     const summary = payload.summary || {};
     const audit = payload.audit || {};
     const sync = DATA.strategy_hub?.selection_sync || {};
+    if (isV421Selection()) {
+      $('#candidate-kpis').innerHTML = [
+        kpi('实际入场', `${num(summary.entries)} 笔`,
+          `${num(summary.distinct_codes)} 只股票`),
+        kpi('单笔胜率', pct(summary.win_rate),
+          `${num(summary.profitable_entries)} / ${num(summary.entries)}`),
+        kpi('2024 账户收益', pct(summary.total_return),
+          `最大回撤 ${pct(summary.maximum_drawdown)}`, tone(summary.total_return)),
+        kpi('H1 / H2', `${pct(summary.h1_return)} / ${pct(summary.h2_return)}`,
+          'H1 未达预注册 15% 门槛'),
+        kpi('双倍滑点收益', pct(summary.double_cost_return),
+          '单边滑点 0.10%', tone(summary.double_cost_return)),
+        kpi('剔除最大盈利股', pct(summary.return_without_top_security),
+          '集中度压力测试', tone(summary.return_without_top_security)),
+      ].join('');
+      $('#selection-strategy').textContent =
+        payload.strategy?.operational_identity || '—';
+      $('#selection-information-end').textContent =
+        payload.strategy?.information_end || '—';
+      $('#selection-training-window').textContent =
+        payload.strategy?.execution || '—';
+      $('#selection-coverage').textContent =
+        '2024 后验开发 · 2025 未独立验证';
+      $('#selection-sync-status').hidden = true;
+      $('#selection-integrity').textContent =
+        audit.next_minute_execution && audit.t_plus_one
+          ? '因果成交链已核验' : '成交链异常';
+      $('#selection-integrity').className =
+        `status ${audit.next_minute_execution && audit.t_plus_one ? 'ok' : 'bad'}`;
+      $('#candidate-hash').textContent =
+        `V421 展示哈希 ${payload.selection_sha256 || '—'}`;
+      $('#history-selection-panel').hidden = true;
+      renderSelectionTable();
+      return;
+    }
+    $('#history-selection-panel').hidden = false;
     $('#candidate-kpis').innerHTML = [
       kpi('冻结信号', `${num(summary.displayed_signals || summary.signals)} 条`,
         `盲测 ${num(summary.signals)} · 盘后增量 ${num(summary.post_freeze_signals || 0)}`),
@@ -2565,6 +2656,7 @@
       final_selection_result: 'V343验证结论',
       final_selection_manifest: '2026股票清单',
       final_selection_live: '冻结策略盘后增量',
+      v421_dashboard: 'V421成交明细展示',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
