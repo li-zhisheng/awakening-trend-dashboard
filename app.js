@@ -329,9 +329,16 @@
     return DATA.final_selection?.rows || [];
   }
 
-  function isV421Selection() {
+  function isExecutedSelection() {
+    return [
+      'awakening-return500-v421-dashboard-selection-v1',
+      'awakening-return500-v442-dashboard-selection-v1',
+    ].includes(DATA.final_selection?.schema);
+  }
+
+  function isV442Selection() {
     return DATA.final_selection?.schema
-      === 'awakening-return500-v421-dashboard-selection-v1';
+      === 'awakening-return500-v442-dashboard-selection-v1';
   }
 
   function selectionPeriodMatch(day, period) {
@@ -342,6 +349,10 @@
       '2024Q2': ['20240401', '20240630'],
       '2024Q3': ['20240701', '20240930'],
       '2024Q4': ['20241001', '20241231'],
+      '2025Q1': ['20250101', '20250331'],
+      '2025Q2': ['20250401', '20250630'],
+      '2025Q3': ['20250701', '20250930'],
+      '2025Q4': ['20251001', '20251231'],
       '2026Q1': ['20260101', '20260331'],
       '2026Q2': ['20260401', '20260630'],
       '2026Q3': ['20260701', '20260930'],
@@ -363,7 +374,7 @@
       }
       if (repeat === 'first' && row.sequence_no !== 1) return false;
       if (repeat === 'repeat' && !row.is_repeat) return false;
-      if (isV421Selection()) {
+      if (isExecutedSelection()) {
         const maximum = Number(row.max_floating_profit_5d);
         if (result === 'large' && !(maximum >= .10)) return false;
         if (result === 'hit' && !(maximum >= .05 && maximum < .10)) {
@@ -389,11 +400,15 @@
     const rows = filteredSelections();
     $('#selection-count').textContent =
       `显示 ${num(rows.length)} / ${num(selectionRows().length)} 条`;
-    if (isV421Selection()) {
+    if (isExecutedSelection()) {
       const reasonLabels = {
         take_profit: '+5%止盈',
         stop_loss: '-3%止损',
         fallback_close: '14:49兜底',
+        failed_support: '弱势承接失败',
+        completed_bar_hard_stop: '-5%硬止损',
+        t1_close_fallback: 'T+1 14:49兜底',
+        right_censored_mark: '期末持仓按市值计',
       };
       $('#candidate-table').innerHTML = `<thead><tr>
         <th>入场日期</th><th>代码</th><th>名称</th>
@@ -409,7 +424,10 @@
           ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
           : '首次且唯一';
         return `<tr>
-          <td>${esc(row.day)}</td><td>${esc(row.code)}</td><td>${esc(row.name)}</td>
+          <td>${esc(row.day)}</td>
+          <td><button class="stock-link candidate-stock-link"
+            data-code="${esc(row.code)}" data-date="${esc(row.day)}">${esc(row.code)}</button></td>
+          <td>${esc(row.name)}</td>
           <td>${esc(clock(row.confirmation_clock))} / ${esc(clock(row.entry_clock))}</td>
           <td>${num(row.entry_price, 2)}</td>
           <td class="${tone(closes.T0)}">${optionalPct(closes.T0)}</td>
@@ -423,6 +441,10 @@
           <td>${esc(repeat)}</td>
         </tr>`;
       }).join('') : emptyRow(14, '当前筛选条件没有成交')}</tbody>`;
+      document.querySelectorAll('.candidate-stock-link').forEach(button => {
+        button.addEventListener('click', () =>
+          openStock(button.dataset.code, button.dataset.date));
+      });
       return;
     }
     const statusLabels = {
@@ -476,7 +498,28 @@
     const summary = payload.summary || {};
     const audit = payload.audit || {};
     const sync = DATA.strategy_hub?.selection_sync || {};
-    if (isV421Selection()) {
+    if (isExecutedSelection()) {
+      const periods = summary.periods || {};
+      if (isV442Selection()) {
+        $('#candidate-kpis').innerHTML = [
+          kpi('实际入场', `${num(summary.entries)} 笔`,
+            `${num(summary.distinct_codes)} 只股票`),
+          kpi('闭环胜率', pct(summary.win_rate),
+            `${num(summary.profitable_entries)} / ${num(summary.closed_entries)}`),
+          kpi('2024H2', pct(periods['2024H2']?.return),
+            `回撤 ${pct(periods['2024H2']?.maximum_drawdown)}`,
+            tone(periods['2024H2']?.return)),
+          kpi('2025 验证', pct(periods['2025']?.return),
+            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
+            tone(periods['2025']?.return)),
+          kpi('2026 影子', pct(periods['2026YTD']?.return),
+            `回撤 ${pct(periods['2026YTD']?.maximum_drawdown)}`,
+            tone(periods['2026YTD']?.return)),
+          kpi('2026 双成本', pct(periods['2026YTD']?.double_cost_return),
+            `去除最大盈利股 ${pct(summary.return_without_top_security_2026)}`,
+            tone(periods['2026YTD']?.double_cost_return)),
+        ].join('');
+      } else {
       $('#candidate-kpis').innerHTML = [
         kpi('实际入场', `${num(summary.entries)} 笔`,
           `${num(summary.distinct_codes)} 只股票`),
@@ -491,14 +534,16 @@
         kpi('剔除最大盈利股', pct(summary.return_without_top_security),
           '集中度压力测试', tone(summary.return_without_top_security)),
       ].join('');
+      }
       $('#selection-strategy').textContent =
         payload.strategy?.operational_identity || '—';
       $('#selection-information-end').textContent =
         payload.strategy?.information_end || '—';
       $('#selection-training-window').textContent =
         payload.strategy?.execution || '—';
-      $('#selection-coverage').textContent =
-        '2024 后验开发 · 2025 未独立验证';
+      $('#selection-coverage').textContent = isV442Selection()
+        ? '2024H2 月度留一开发 · 2025 冻结验证通过 · 2026 影子未达最终门槛'
+        : '2024 后验开发 · 2025 未独立验证';
       $('#selection-sync-status').hidden = true;
       $('#selection-integrity').textContent =
         audit.next_minute_execution && audit.t_plus_one
@@ -506,7 +551,7 @@
       $('#selection-integrity').className =
         `status ${audit.next_minute_execution && audit.t_plus_one ? 'ok' : 'bad'}`;
       $('#candidate-hash').textContent =
-        `V421 展示哈希 ${payload.selection_sha256 || '—'}`;
+        `${isV442Selection() ? 'V442' : 'V421'} 展示哈希 ${payload.selection_sha256 || '—'}`;
       $('#history-selection-panel').hidden = true;
       renderSelectionTable();
       return;
@@ -2656,7 +2701,7 @@
       final_selection_result: 'V343验证结论',
       final_selection_manifest: '2026股票清单',
       final_selection_live: '冻结策略盘后增量',
-      v421_dashboard: 'V421成交明细展示',
+      strategy_selection_dashboard: 'V442选股成交明细',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
