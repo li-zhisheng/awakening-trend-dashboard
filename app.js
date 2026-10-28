@@ -346,6 +346,7 @@
       'awakening-return500-v421-dashboard-selection-v1',
       'awakening-return500-v442-dashboard-selection-v1',
       'awakening-return500-v470-dashboard-selection-v1',
+      'awakening-return500-v500-dashboard-selection-v1',
     ].includes(DATA.final_selection?.schema);
   }
 
@@ -357,6 +358,11 @@
   function isV470Selection() {
     return DATA.final_selection?.schema
       === 'awakening-return500-v470-dashboard-selection-v1';
+  }
+
+  function isV500Selection() {
+    return DATA.final_selection?.schema
+      === 'awakening-return500-v500-dashboard-selection-v1';
   }
 
   function selectionPeriodMatch(day, period) {
@@ -530,7 +536,26 @@
     const sync = DATA.strategy_hub?.selection_sync || {};
     if (isExecutedSelection()) {
       const periods = summary.periods || {};
-      if (isV470Selection()) {
+      if (isV500Selection()) {
+        $('#candidate-kpis').innerHTML = [
+          kpi('实际成交', `${num(summary.entries)} 笔`,
+            `${num(summary.distinct_codes)} 只股票`),
+          kpi('逐股胜率', pct(summary.win_rate),
+            `${num(summary.profitable_entries)} / ${num(summary.closed_entries)}`),
+          kpi('2024 开发', pct(periods['2024']?.return),
+            `回撤 ${pct(periods['2024']?.maximum_drawdown)}`,
+            tone(periods['2024']?.return)),
+          kpi('2025 验证', pct(periods['2025']?.return),
+            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
+            tone(periods['2025']?.return)),
+          kpi('2026 压测', pct(periods['2026YTD']?.return),
+            `回撤 ${pct(periods['2026YTD']?.maximum_drawdown)}`,
+            tone(periods['2026YTD']?.return)),
+          kpi('2026 双成本 / 去头股',
+            `${pct(periods['2026YTD']?.double_cost_return)} / ${pct(summary.return_without_top_security_2026)}`,
+            '无杠杆组合口径', tone(periods['2026YTD']?.double_cost_return)),
+        ].join('');
+      } else if (isV470Selection()) {
         $('#candidate-kpis').innerHTML = [
           kpi('实际入场', `${num(summary.entries)} 笔`,
             `${num(summary.distinct_codes)} 只股票`),
@@ -590,8 +615,10 @@
         payload.strategy?.information_end || '—';
       $('#selection-training-window').textContent =
         payload.strategy?.execution || '—';
-      $('#selection-coverage').textContent = isV470Selection()
-        ? '2024 开发 · 2025 冻结验证 · 2026 盲测至 09-30 · Q4 前瞻影子待运行'
+      $('#selection-coverage').textContent = isV500Selection()
+        ? '2024–2026 均已暴露用于开发 · 历史门禁通过 · 前瞻影子验证待运行'
+        : isV470Selection()
+          ? '2024 开发 · 2025 冻结验证 · 2026 盲测至 09-30 · Q4 前瞻影子待运行'
         : isV442Selection()
           ? '2024H2 月度留一开发 · 2025 冻结验证通过 · 2026 影子未达最终门槛'
           : '2024 后验开发 · 2025 未独立验证';
@@ -602,7 +629,7 @@
       $('#selection-integrity').className =
         `status ${audit.next_minute_execution && audit.t_plus_one ? 'ok' : 'bad'}`;
       $('#candidate-hash').textContent =
-        `${isV470Selection() ? 'V470' : isV442Selection() ? 'V442' : 'V421'} 展示哈希 ${payload.selection_sha256 || '—'}`;
+        `${isV500Selection() ? 'V500' : isV470Selection() ? 'V470' : isV442Selection() ? 'V442' : 'V421'} 展示哈希 ${payload.selection_sha256 || '—'}`;
       $('#history-selection-panel').hidden = true;
       renderSelectionTable();
       return;
@@ -2752,7 +2779,7 @@
       final_selection_result: 'V343验证结论',
       final_selection_manifest: '2026股票清单',
       final_selection_live: '冻结策略盘后增量',
-      strategy_selection_dashboard: 'V470选股成交明细',
+      strategy_selection_dashboard: 'V500选股成交明细',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
