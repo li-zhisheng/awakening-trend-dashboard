@@ -124,6 +124,7 @@ input,select{
 }
 .stock-table-wrap{max-height:660px}
 .stock-link{border:0;background:none;padding:0;color:#76ced2;text-decoration:underline;text-underline-offset:3px}
+.stock-link-disabled{color:var(--muted,#9aa4b2);text-decoration:line dotted underline;cursor:not-allowed}
 .pagination{display:flex;align-items:center;justify-content:center;gap:14px;padding-top:14px}
 .status-band{
   display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
