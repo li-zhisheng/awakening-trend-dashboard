@@ -347,6 +347,10 @@
       'awakening-return500-v442-dashboard-selection-v1',
       'awakening-return500-v470-dashboard-selection-v1',
       'awakening-return500-v500-dashboard-selection-v1',
+      'awakening-return500-v500-dashboard-selection-v2',
+      'awakening-return500-v500-dashboard-selection-v3',
+      'awakening-return500-v500-dashboard-selection-v4',
+      'awakening-return500-v502-primary-v1',
     ].includes(DATA.final_selection?.schema);
   }
 
@@ -361,8 +365,17 @@
   }
 
   function isV500Selection() {
+    return [
+      'awakening-return500-v500-dashboard-selection-v1',
+      'awakening-return500-v500-dashboard-selection-v2',
+      'awakening-return500-v500-dashboard-selection-v3',
+      'awakening-return500-v500-dashboard-selection-v4',
+    ].includes(DATA.final_selection?.schema);
+  }
+
+  function isV502Selection() {
     return DATA.final_selection?.schema
-      === 'awakening-return500-v500-dashboard-selection-v1';
+      === 'awakening-return500-v502-primary-v1';
   }
 
   function selectionPeriodMatch(day, period) {
@@ -433,6 +446,8 @@
         completed_bar_hard_stop: '-5%硬止损',
         t1_close_fallback: 'T+1 14:49兜底',
         t1_close: 'T+1 收盘退出',
+        first_sellable_close: '首个可卖收盘退出',
+        unresolved_exit_marked_total_loss: '未能退出，按全损计',
         right_censored_mark: '期末持仓按市值计',
       };
       $('#candidate-table').innerHTML = `<thead><tr>
@@ -534,9 +549,32 @@
     const summary = payload.summary || {};
     const audit = payload.audit || {};
     const sync = DATA.strategy_hub?.selection_sync || {};
+    const v502Primary = isV502Selection();
+    document.querySelector('.selection-toolbar').hidden = v502Primary;
+    document.querySelector('.candidate-table-wrap').hidden = v502Primary;
     if (isExecutedSelection()) {
       const periods = summary.periods || {};
-      if (isV500Selection()) {
+      if (isV502Selection()) {
+        const doubleCost = summary.double_cost_periods || {};
+        const highEntry = summary.minute_high_entry_periods || {};
+        $('#candidate-kpis').innerHTML = [
+          kpi('2024 收益', pct(periods['2024']?.return),
+            `回撤 ${pct(periods['2024']?.maximum_drawdown)}`,
+            tone(periods['2024']?.return)),
+          kpi('2025 收益', pct(periods['2025']?.return),
+            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
+            tone(periods['2025']?.return)),
+          kpi('2026 收益', pct(periods['2026']?.return),
+            `回撤 ${pct(periods['2026']?.maximum_drawdown)}`,
+            tone(periods['2026']?.return)),
+          kpi('2026 双成本', pct(doubleCost['2026']?.return),
+            '成本压力测试', tone(doubleCost['2026']?.return)),
+          kpi('2026 分钟最高价', pct(highEntry['2026']?.return),
+            '成交价压力测试', tone(highEntry['2026']?.return)),
+          kpi('真实资金', '未放行',
+            '去头股或最佳日后稳健门槛未通过'),
+        ].join('');
+      } else if (isV500Selection()) {
         $('#candidate-kpis').innerHTML = [
           kpi('实际成交', `${num(summary.entries)} 笔`,
             `${num(summary.distinct_codes)} 只股票`),
@@ -545,10 +583,10 @@
           kpi('2024 开发', pct(periods['2024']?.return),
             `回撤 ${pct(periods['2024']?.maximum_drawdown)}`,
             tone(periods['2024']?.return)),
-          kpi('2025 验证', pct(periods['2025']?.return),
+          kpi('2025 开发', pct(periods['2025']?.return),
             `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
             tone(periods['2025']?.return)),
-          kpi('2026 压测', pct(periods['2026YTD']?.return),
+          kpi('2026 只读验证', pct(periods['2026YTD']?.return),
             `回撤 ${pct(periods['2026YTD']?.maximum_drawdown)}`,
             tone(periods['2026YTD']?.return)),
           kpi('2026 双成本 / 去头股',
@@ -615,54 +653,75 @@
         payload.strategy?.information_end || '—';
       $('#selection-training-window').textContent =
         payload.strategy?.execution || '—';
-      $('#selection-coverage').textContent = isV500Selection()
-        ? '2024–2026 均已暴露用于开发 · 历史门禁通过 · 前瞻影子验证待运行'
+      $('#selection-coverage').textContent = isV502Selection()
+        ? '2024–2025 开发选择 · 2026 只读验证 · 收益最高但集中度门槛未通过'
+        : isV500Selection()
+        ? `2024–2025 开发选择 · 2026 只读验证（曾暴露，非盲测） · ${
+          payload.research_boundary?.validation_passed
+            ? '验证通过' : '验证失败，禁止针对2026调参'}`
         : isV470Selection()
           ? '2024 开发 · 2025 冻结验证 · 2026 盲测至 09-30 · Q4 前瞻影子待运行'
         : isV442Selection()
           ? '2024H2 月度留一开发 · 2025 冻结验证通过 · 2026 影子未达最终门槛'
           : '2024 后验开发 · 2025 未独立验证';
       $('#selection-sync-status').hidden = true;
+      const causalExit = audit.t_plus_one
+        || audit.t_plus_one_exit_intent;
       $('#selection-integrity').textContent =
-        audit.next_minute_execution && audit.t_plus_one
-          ? '因果成交链已核验' : '成交链异常';
+        audit.next_minute_execution && causalExit
+          ? (
+            isV502Selection()
+              ? '因果链已核验 · 稳健门槛未通过'
+              : '因果成交链已核验'
+          )
+          : '成交链异常';
       $('#selection-integrity').className =
-        `status ${audit.next_minute_execution && audit.t_plus_one ? 'ok' : 'bad'}`;
+        `status ${
+          audit.next_minute_execution && causalExit && !isV502Selection()
+            ? 'ok' : 'bad'
+        }`;
       $('#candidate-hash').textContent =
-        `${isV500Selection() ? 'V500' : isV470Selection() ? 'V470' : isV442Selection() ? 'V442' : 'V421'} 展示哈希 ${payload.selection_sha256 || '—'}`;
+        `${isV502Selection() ? 'V502' : isV500Selection() ? 'V500' : isV470Selection() ? 'V470' : isV442Selection() ? 'V442' : 'V421'} 展示哈希 ${audit.result_sha256 || payload.selection_sha256 || '—'}`;
       $('#history-selection-panel').hidden = true;
       renderSelectionTable();
       return;
     }
     $('#history-selection-panel').hidden = false;
+    const primary = payload.strategy || {};
+    const account = primary.historical_account || {};
+    const strictT1 = primary.strict_t1 || {};
     $('#candidate-kpis').innerHTML = [
-      kpi('冻结信号', `${num(summary.displayed_signals || summary.signals)} 条`,
-        `盲测 ${num(summary.signals)} · 盘后增量 ${num(summary.post_freeze_signals || 0)}`),
-      kpi('有效审计', `${num(summary.audited)} 条`,
-        `删失 ${num((summary.right_censored || 0) + (summary.corporate_action_censored || 0))} 条`),
+      kpi('2024H2 账户收益', pct(account['2024H2']?.return),
+        `最大回撤 ${pct(account['2024H2']?.maximum_drawdown)}`,
+        tone(account['2024H2']?.return)),
+      kpi('2025 账户收益', pct(account['2025']?.return),
+        `最大回撤 ${pct(account['2025']?.maximum_drawdown)}`,
+        tone(account['2025']?.return)),
+      kpi('2025 T+1 胜率', pct(strictT1['2025']?.retained_positive_rate),
+        `平均净收益 ${pct(strictT1['2025']?.retained_average_return)}`),
       kpi('≥10% 修复命中率', pct(summary.hit_rate_ge_10pct),
         `${num(summary.hits_ge_10pct)} / ${num(summary.audited)}`, 'up'),
       kpi('≥15% 大机会占比', pct(summary.large_opportunity_rate_ge_15pct),
         `${num(summary.large_opportunities_ge_15pct)} / ${num(summary.audited)}`, 'up'),
-      kpi('每股首次信号命中', pct(summary.first_signal_hit_rate_ge_10pct),
-        `${num(summary.first_signal_hits_ge_10pct)} / ${num(summary.audited_unique_codes)}`),
-      kpi('95% 置信区间',
-        `${pct(summary.confidence_interval_95?.[0])}–${pct(summary.confidence_interval_95?.[1])}`,
-        '信号级 Wilson 区间'),
+      kpi('真实资金', primary.validation_scope?.real_money_enabled
+        ? '已启用' : '未放行',
+      primary.validation_scope?.v357_account_2026_validated
+        ? '2026 账户已验证' : 'V357 2026 账户待验证'),
     ].join('');
     $('#selection-strategy').textContent =
-      payload.strategy?.operational_identity || '—';
+      primary.id || primary.operational_identity || '—';
     $('#selection-information-end').textContent =
-      payload.strategy?.information_end || '—';
+      primary.information_end || '—';
     $('#selection-training-window').textContent =
-      `${num(audit.training_rows)} 行 / ${num(audit.training_days)} 日`;
+      primary.execution
+        || `${num(audit.training_rows)} 行 / ${num(audit.training_days)} 日`;
     const authoritativeDay = sync.latest_authoritative_day
       || audit.monitor_through;
     const latestSignalDay = sync.latest_displayed_signal_day
       || audit.latest_signal_day;
     $('#selection-coverage').textContent = authoritativeDay
       ? `${ymd(authoritativeDay)} · 最新信号 ${ymd(
-        latestSignalDay || '无')}`
+        latestSignalDay || '无')} · V357账户验证待完成`
       : '等待 SuperMind 权威分钟数据';
     const syncStatus = $('#selection-sync-status');
     if (sync.status && sync.status !== 'ready') {
@@ -684,8 +743,8 @@
     $('#selection-integrity').className =
       `status ${audit.hash_chain_verified ? 'ok' : 'bad'}`;
     $('#candidate-hash').textContent = payload.freeze_sha256
-      ? `V344 冻结哈希 ${payload.freeze_sha256}`
-      : 'V344 冻结哈希 —';
+      ? `V344+V357 主策略哈希 ${payload.freeze_sha256}`
+      : 'V344+V357 主策略哈希 —';
     renderSelectionTable();
   }
 
