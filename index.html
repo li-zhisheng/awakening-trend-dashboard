@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261027-v442">
+  <link rel="stylesheet" href="styles.css?v=20261101-complete-candidates">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261031-v502-causal-audit" defer></script>
+  <script src="app.js?v=20261101-complete-candidates" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -95,14 +95,20 @@
           <option value="profit">盈利</option>
           <option value="loss">亏损</option>
         </select></label>
+        <label>状态<select id="selection-status">
+          <option value="all">全部候选</option>
+          <option value="old_frozen_trade">旧账户已交易</option>
+          <option value="observation_candidate">观察候选</option>
+          <option value="entry_unfillable">成交约束未通过</option>
+        </select></label>
         <label>搜索<input id="selection-search" type="search" placeholder="代码或名称"></label>
         <span id="selection-count" class="toolbar-count">--</span>
       </div>
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>V502 旧冻结交易明细</h2>
-            <p>信号与09:37入场因果成立；旧账户使用未来退出容量过滤，收益口径已撤销</p>
+            <h2>V502 每日Top2候选明细</h2>
+            <p>全部09:36确认候选均展示；旧账户是否交易仅作为状态，不再过滤候选</p>
           </div>
           <span id="selection-integrity" class="status">--</span>
         </div>

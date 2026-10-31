@@ -118,6 +118,13 @@ input,select{
   overflow-wrap:anywhere;text-align:right;margin-bottom:10px;
 }
 .candidate-table-wrap{max-height:680px}
+.candidate-state{
+  display:inline-block;padding:4px 7px;border:1px solid var(--line);
+  border-radius:3px;font-size:12px;white-space:nowrap;
+}
+.candidate-state.old_frozen_trade{color:#8edce0;border-color:#3f6f78}
+.candidate-state.observation_candidate{color:#f0c96a;border-color:#705d2e}
+.candidate-state.entry_unfillable{color:#8ea0a7;border-color:#46545a}
 .selection-chart-button{
   padding:5px 9px;border-color:#3f6f78;background:#13242a;
   color:#8edce0;font-size:12px;
@@ -205,6 +212,8 @@ footer{padding:24px;text-align:center;color:#697a80;border-top:1px solid var(--l
   .toolbar-count{margin-left:0}
   .selection-toolbar .toolbar-count{width:100%}
   .hash-label{text-align:left}
+  #view-candidates .panel-head{flex-direction:column}
+  #selection-integrity{width:100%;white-space:normal}
   .stock-market-toolbar{align-items:stretch}
   #stock-minute-nav{width:100%}
   #stock-minute-date-wrap{min-width:0;flex:1}

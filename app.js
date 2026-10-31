@@ -381,13 +381,21 @@
   function filteredSelections() {
     const year = document.querySelector("#selection-year").value;
     const result = document.querySelector("#selection-result").value;
+    const status = document.querySelector("#selection-status").value;
     const query = document.querySelector(
       "#selection-search"
     ).value.trim().toLowerCase();
     return (DATA.final_selection?.rows || []).filter(row => {
       if (year !== "all" && String(row.year) !== year) return false;
-      if (result === "profit" && !(row.net_return > 0)) return false;
-      if (result === "loss" && !(row.net_return <= 0)) return false;
+      if (status !== "all" && row.candidate_status !== status) return false;
+      if (
+        result === "profit"
+        && !(row.net_return !== null && row.net_return > 0)
+      ) return false;
+      if (
+        result === "loss"
+        && !(row.net_return !== null && row.net_return <= 0)
+      ) return false;
       if (
         query
         && !`${row.code}${row.name}`.toLowerCase().includes(query)
@@ -400,7 +408,7 @@
     const rows = filteredSelections();
     document.querySelector("#selection-count").textContent =
       `显示 ${num(rows.length)} / ${
-        num(DATA.final_selection?.rows?.length || 0)} 笔`;
+        num(DATA.final_selection?.rows?.length || 0)} 条候选`;
     const reasons = {
       weakness: "早盘走弱",
       trailing: "回撤退出",
@@ -408,11 +416,16 @@
       maximum_hold: "最长持有",
       unresolved_exit_total_loss: "未能退出",
     };
+    const statuses = {
+      old_frozen_trade: "旧账户已交易",
+      observation_candidate: "观察候选",
+      entry_unfillable: "成交约束未通过",
+    };
     document.querySelector("#candidate-table").innerHTML = `<thead><tr>
-      <th>入场日</th><th>股票</th><th>排名 / 仓位</th>
-      <th>09:35 涨幅 / 位置 / 路径</th>
-      <th>09:36 涨幅 / 位置 / 路径</th>
-      <th>09:37 买入价 / 涨跌幅</th>
+      <th>候选日</th><th>股票</th><th>排名 / 仓位</th><th>状态</th>
+      <th>09:35 累计涨幅</th>
+      <th>09:35–09:36 区间涨幅</th>
+      <th>09:37 参考价 / 涨跌幅</th>
       <th>退出 / 持有</th><th>退出原因</th>
       <th>卖出价 / 当日涨跌幅</th><th>实际净收益</th>
     </tr></thead><tbody>${rows.length ? rows.map(row => {
@@ -428,22 +441,30 @@
           data-code="${esc(row.code)}" data-date="${esc(row.day)}"
           type="button">${esc(row.code)}</button><br>${esc(row.name)}</td>
         <td>Top${num(row.candidate_rank)} / ${pct(row.weight)}</td>
-        <td class="${tone(row.signal_return)}">${pct(row.signal_return)}
-          / ${num(row.range_position, 2)}
-          / ${num(row.path_efficiency, 2)}</td>
-        <td class="${tone(row.confirmation_return)}">${pct(row.confirmation_return)}
-          / ${num(row.confirmation_range_position, 2)}
-          / ${num(row.confirmation_path_efficiency, 2)}</td>
+        <td><span class="candidate-state ${esc(row.candidate_status)}">${
+          esc(statuses[row.candidate_status] || row.candidate_status)
+        }</span></td>
+        <td class="${tone(row.signal_return)}">${pct(row.signal_return)}</td>
+        <td class="${tone(row.confirmation_return)}">${
+          pct(row.confirmation_return)}</td>
         <td>${num(row.entry_price, 2)}
           / <span class="${tone(row.entry_return)}">${pct(row.entry_return)}</span></td>
-        <td>${esc(row.exit_day)} 09:36
-          / ${num(row.hold_days)}日</td>
-        <td>${esc(reason)}${flags ? `<br>${esc(flags)}` : ""}</td>
-        <td>${num(row.exit_price, 2)}
-          / <span class="${tone(row.exit_day_return)}">${pct(row.exit_day_return)}</span></td>
-        <td class="${tone(row.net_return)}">${pct(row.net_return)}</td>
+        <td>${row.old_frozen_trade
+          ? `${esc(row.exit_day)} ${clock(row.exit_clock)}
+            / ${num(row.hold_days)}日`
+          : "—"}</td>
+        <td>${row.old_frozen_trade
+          ? `${esc(reason)}${flags ? `<br>${esc(flags)}` : ""}`
+          : esc(row.candidate_status_reason)}</td>
+        <td>${row.old_frozen_trade
+          ? `${num(row.exit_price, 2)}
+            / <span class="${tone(row.exit_day_return)}">${
+              optionalPct(row.exit_day_return)}</span>`
+          : "—"}</td>
+        <td class="${tone(row.net_return)}">${
+          optionalPct(row.net_return)}</td>
       </tr>`;
-    }).join("") : emptyRow(10, "当前筛选条件没有交易")}</tbody>`;
+    }).join("") : emptyRow(11, "当前筛选条件没有候选")}</tbody>`;
     document.querySelectorAll(".candidate-stock-link").forEach(button => {
       button.addEventListener("click", () =>
         openStock(button.dataset.code, button.dataset.date));
@@ -2462,7 +2483,8 @@
     $('#stock-prev').addEventListener('click', () => { stockPage -= 1; renderStocks(); });
     $('#stock-next').addEventListener('click', () => { stockPage += 1; renderStocks(); });
     [
-      "selection-year", "selection-result", "selection-search",
+      "selection-year", "selection-result", "selection-status",
+      "selection-search",
     ].forEach(id => document.getElementById(id).addEventListener(
       "input", renderSelectionTable));
     $('#stock-daily-tab').addEventListener(
