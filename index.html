@@ -8,7 +8,7 @@
   <title>多空指标 · 历史回测与实盘验证</title>
   <link rel="stylesheet" href="styles.css?v=20261027-v442">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261030-v502" defer></script>
+  <script src="app.js?v=20261031-v502-details" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -76,36 +76,6 @@
     </section>
 
     <section id="view-candidates" class="view">
-      <div class="toolbar selection-toolbar">
-        <label>验证季度<select id="selection-period">
-          <option value="all">全部季度</option>
-          <option value="2024Q1">2024 第一季度</option>
-          <option value="2024Q2">2024 第二季度</option>
-          <option value="2024Q3">2024 第三季度</option>
-          <option value="2024Q4">2024 第四季度</option>
-          <option value="2025Q1">2025 第一季度</option>
-          <option value="2025Q2">2025 第二季度</option>
-          <option value="2025Q3">2025 第三季度</option>
-          <option value="2025Q4">2025 第四季度</option>
-          <option value="2026Q1">2026 第一季度</option>
-          <option value="2026Q2">2026 第二季度</option>
-          <option value="2026Q3">2026 第三季度</option>
-          <option value="2026Q4">2026 第四季度</option>
-        </select></label>
-        <label>验证结果<select id="selection-result">
-          <option value="all">全部结果</option>
-          <option value="large">5日最大浮盈 ≥ 10%</option>
-          <option value="hit">5日最大浮盈 5%–10%</option>
-          <option value="miss">5日最大浮盈 &lt; 5%</option>
-        </select></label>
-        <label>信号次数<select id="selection-repeat">
-          <option value="all">全部信号</option>
-          <option value="first">每只股票首次</option>
-          <option value="repeat">重复入选</option>
-        </select></label>
-        <label>搜索股票<input id="selection-search" type="search" placeholder="代码或名称"></label>
-        <span id="selection-count" class="toolbar-count">--</span>
-      </div>
       <div id="candidate-kpis" class="kpi-grid"></div>
       <section class="status-band selection-summary">
         <div><span>展示策略</span><strong id="selection-strategy">--</strong></div>
@@ -113,16 +83,26 @@
         <div><span>执行口径</span><strong id="selection-training-window">--</strong></div>
         <div><span>验证边界</span><strong id="selection-coverage">--</strong></div>
       </section>
-      <div id="selection-sync-status" class="selection-sync-status" hidden>
-        <strong id="selection-sync-state">--</strong>
-        <span id="selection-sync-detail">--</span>
-        <time id="selection-sync-updated">--</time>
+      <div class="toolbar selection-toolbar">
+        <label>年份<select id="selection-year">
+          <option value="all">全部年份</option>
+          <option value="2024">2024</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+        </select></label>
+        <label>收益<select id="selection-result">
+          <option value="all">全部交易</option>
+          <option value="profit">盈利</option>
+          <option value="loss">亏损</option>
+        </select></label>
+        <label>搜索<input id="selection-search" type="search" placeholder="代码或名称"></label>
+        <span id="selection-count" class="toolbar-count">--</span>
       </div>
       <section class="panel">
         <div class="panel-head">
           <div>
             <h2>V502 确认趋势主策略</h2>
-            <p>09:35 候选，09:36 趋势确认，09:37 因果入场；真实资金保持关闭</p>
+            <p>09:35 候选，09:36 趋势确认，09:37 因果入场；主策略收益与回撤锁定</p>
           </div>
           <span id="selection-integrity" class="status">--</span>
         </div>
@@ -130,54 +110,6 @@
         <div class="table-wrap candidate-table-wrap">
           <table id="candidate-table"></table>
         </div>
-      </section>
-      <section id="history-selection-panel" class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>2024–2025 历史选股明细</h2>
-            <p>与 2026 相同的 T0 09:36 至 T+3 收盘修复口径；历史代码不提供图表跳转</p>
-          </div>
-          <span id="history-selection-integrity" class="status">--</span>
-        </div>
-        <div class="toolbar history-selection-toolbar">
-          <label>验证季度<select id="history-selection-period">
-            <option value="all">全部季度</option>
-            <option value="2024Q1">2024 第一季度</option>
-            <option value="2024Q2">2024 第二季度</option>
-            <option value="2024Q3">2024 第三季度</option>
-            <option value="2024Q4">2024 第四季度</option>
-            <option value="2025Q1">2025 第一季度</option>
-            <option value="2025Q2">2025 第二季度</option>
-            <option value="2025Q3">2025 第三季度</option>
-            <option value="2025Q4">2025 第四季度</option>
-          </select></label>
-          <label>验证结果<select id="history-selection-result">
-            <option value="all">全部结果</option>
-            <option value="large">最大修复 ≥ 15%</option>
-            <option value="hit">最大修复 10%–15%</option>
-            <option value="miss">最大修复 &lt; 10%</option>
-          </select></label>
-          <label>样本性质<select id="history-selection-role">
-            <option value="all">全部样本</option>
-            <option value="training_in_sample_replay">2024H1 训练内回溯</option>
-            <option value="causal">开发评估与跨年复核</option>
-          </select></label>
-          <label>信号次数<select id="history-selection-repeat">
-            <option value="all">全部信号</option>
-            <option value="first">每只股票首次</option>
-            <option value="repeat">重复入选</option>
-          </select></label>
-          <label>搜索股票<input id="history-selection-search" type="search" placeholder="代码或名称"></label>
-          <span id="history-selection-count" class="toolbar-count">--</span>
-        </div>
-        <div id="history-selection-kpis" class="kpi-grid compact-kpis"></div>
-        <div class="table-wrap candidate-table-wrap">
-          <table id="history-selection-table"></table>
-        </div>
-      </section>
-      <section class="panel warning-panel">
-        <h2>验证边界</h2>
-        <p id="selection-boundary-note">V421 仅是 2024 已暴露数据上的后验开发候选，未通过预注册 H1 门槛，也未通过 2025 独立验证。本页用于检查具体股票质量，不代表生产 V338 已被替换或策略已晋级。</p>
       </section>
     </section>
 

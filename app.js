@@ -325,532 +325,127 @@
     renderMonthlyOverview();
   }
 
-  function selectionRows() {
-    return DATA.final_selection?.rows || [];
-  }
-
-  let chartableCodeCache = null;
-  function selectionChartableCodes() {
-    if (!chartableCodeCache || chartableCodeCache.data !== DATA) {
-      chartableCodeCache = {
-        data: DATA,
-        set: new Set(
-          (DATA?.stock_summary || []).map(stock => stock.code)),
-      };
-    }
-    return chartableCodeCache.set;
-  }
-
-  function isExecutedSelection() {
-    return [
-      'awakening-return500-v421-dashboard-selection-v1',
-      'awakening-return500-v442-dashboard-selection-v1',
-      'awakening-return500-v470-dashboard-selection-v1',
-      'awakening-return500-v500-dashboard-selection-v1',
-      'awakening-return500-v500-dashboard-selection-v2',
-      'awakening-return500-v500-dashboard-selection-v3',
-      'awakening-return500-v500-dashboard-selection-v4',
-      'awakening-return500-v502-primary-v1',
-    ].includes(DATA.final_selection?.schema);
-  }
-
-  function isV442Selection() {
-    return DATA.final_selection?.schema
-      === 'awakening-return500-v442-dashboard-selection-v1';
-  }
-
-  function isV470Selection() {
-    return DATA.final_selection?.schema
-      === 'awakening-return500-v470-dashboard-selection-v1';
-  }
-
-  function isV500Selection() {
-    return [
-      'awakening-return500-v500-dashboard-selection-v1',
-      'awakening-return500-v500-dashboard-selection-v2',
-      'awakening-return500-v500-dashboard-selection-v3',
-      'awakening-return500-v500-dashboard-selection-v4',
-    ].includes(DATA.final_selection?.schema);
-  }
-
   function isV502Selection() {
     return DATA.final_selection?.schema
-      === 'awakening-return500-v502-primary-v1';
+      === "awakening-return500-v502-primary-v1";
   }
 
-  function selectionPeriodMatch(day, period) {
-    if (period === 'all') return true;
-    const compact = String(day || '').replaceAll('-', '');
-    const ranges = {
-      '2024Q1': ['20240101', '20240331'],
-      '2024Q2': ['20240401', '20240630'],
-      '2024Q3': ['20240701', '20240930'],
-      '2024Q4': ['20241001', '20241231'],
-      '2025Q1': ['20250101', '20250331'],
-      '2025Q2': ['20250401', '20250630'],
-      '2025Q3': ['20250701', '20250930'],
-      '2025Q4': ['20251001', '20251231'],
-      '2026Q1': ['20260101', '20260331'],
-      '2026Q2': ['20260401', '20260630'],
-      '2026Q3': ['20260701', '20260930'],
-      '2026Q4': ['20261001', '20261231'],
-    };
-    const range = ranges[period];
-    return range ? compact >= range[0] && compact <= range[1] : true;
+  function renderCandidates() {
+    const payload = DATA.final_selection || {};
+    if (!isV502Selection()) {
+      throw new Error("V502 primary strategy payload required");
+    }
+    const summary = payload.summary || {};
+    const audit = payload.audit || {};
+    const periods = summary.periods || {};
+    const doubleCost = summary.double_cost_periods || {};
+    const highEntry = summary.minute_high_entry_periods || {};
+    document.querySelector("#candidate-kpis").innerHTML = [
+      kpi("2024 收益", pct(periods["2024"]?.return),
+        "回撤 " + pct(periods["2024"]?.maximum_drawdown),
+        tone(periods["2024"]?.return)),
+      kpi("2025 收益", pct(periods["2025"]?.return),
+        "回撤 " + pct(periods["2025"]?.maximum_drawdown),
+        tone(periods["2025"]?.return)),
+      kpi("2026 收益", pct(periods["2026"]?.return),
+        "回撤 " + pct(periods["2026"]?.maximum_drawdown),
+        tone(periods["2026"]?.return)),
+      kpi("2026 双成本", pct(doubleCost["2026"]?.return),
+        "成本压力测试", tone(doubleCost["2026"]?.return)),
+      kpi("2026 分钟最高价", pct(highEntry["2026"]?.return),
+        "成交价压力测试", tone(highEntry["2026"]?.return)),
+      kpi("真实资金", "未放行",
+        "去头股或最佳日后稳健门槛未通过"),
+    ].join("");
+    const strategy = payload.strategy || {};
+    document.querySelector("#selection-strategy").textContent =
+      strategy.operational_identity || "—";
+    document.querySelector("#selection-information-end").textContent =
+      strategy.information_end || "—";
+    document.querySelector("#selection-training-window").textContent =
+      strategy.execution || "—";
+    document.querySelector("#selection-coverage").textContent =
+      "2024–2025 开发选择 · 2026 只读验证 · 收益与回撤已锁定";
+    document.querySelector("#selection-integrity").textContent =
+      audit.metrics_exactly_frozen
+        ? "因果链与收益回撤已锁定" : "V502 基线漂移";
+    document.querySelector("#selection-integrity").className =
+      "status " + (audit.metrics_exactly_frozen ? "ok" : "bad");
+    document.querySelector("#candidate-hash").textContent =
+      "V502 展示哈希 " + (audit.result_sha256 || "—");
+    renderSelectionTable();
   }
 
   function filteredSelections() {
-    const period = $('#selection-period').value;
-    const result = $('#selection-result').value;
-    const repeat = $('#selection-repeat').value;
-    const query = $('#selection-search').value.trim().toLowerCase();
-    return selectionRows().filter(row => {
-      if (!selectionPeriodMatch(row.day, period)) return false;
-      if (query && !`${row.code}${row.name}`.toLowerCase().includes(query)) {
-        return false;
-      }
-      if (repeat === 'first' && row.sequence_no !== 1) return false;
-      if (repeat === 'repeat' && !row.is_repeat) return false;
-      if (isExecutedSelection()) {
-        const maximum = Number(row.max_floating_profit_5d);
-        if (result === 'large' && !(maximum >= .10)) return false;
-        if (result === 'hit' && !(maximum >= .05 && maximum < .10)) {
-          return false;
-        }
-        if (result === 'miss' && !(maximum < .05)) return false;
-        return true;
-      }
-      if (result === 'censored' && row.status === 'audited') return false;
-      if (result === 'large' && row.large_opportunity !== true) return false;
+    const year = document.querySelector("#selection-year").value;
+    const result = document.querySelector("#selection-result").value;
+    const query = document.querySelector(
+      "#selection-search"
+    ).value.trim().toLowerCase();
+    return (DATA.final_selection?.rows || []).filter(row => {
+      if (year !== "all" && String(row.year) !== year) return false;
+      if (result === "profit" && !(row.net_return > 0)) return false;
+      if (result === "loss" && !(row.net_return <= 0)) return false;
       if (
-        result === 'hit'
-        && !(row.hit === true && row.large_opportunity !== true)
+        query
+        && !`${row.code}${row.name}`.toLowerCase().includes(query)
       ) return false;
-      if (result === 'miss' && !(row.status === 'audited' && row.hit === false)) {
-        return false;
-      }
       return true;
     });
   }
 
   function renderSelectionTable() {
     const rows = filteredSelections();
-    $('#selection-count').textContent =
-      `显示 ${num(rows.length)} / ${num(selectionRows().length)} 条`;
-    if (isExecutedSelection()) {
-      const reasonLabels = {
-        take_profit: '+5%止盈',
-        stop_loss: '-3%止损',
-        fallback_close: '14:49兜底',
-        failed_support: '弱势承接失败',
-        completed_bar_hard_stop: '-5%硬止损',
-        t1_close_fallback: 'T+1 14:49兜底',
-        t1_close: 'T+1 收盘退出',
-        first_sellable_close: '首个可卖收盘退出',
-        unresolved_exit_marked_total_loss: '未能退出，按全损计',
-        right_censored_mark: '期末持仓按市值计',
-      };
-      $('#candidate-table').innerHTML = `<thead><tr>
-        <th>入场日期</th><th>代码</th><th>名称</th>
-        <th>确认 / 成交</th><th>09:35涨幅</th><th>盘中位置</th>
-        <th>情绪闸门</th><th>成交价</th>
-        <th>T0 收盘</th><th>T+1 收盘</th><th>T+3 收盘</th><th>T+5 收盘</th>
-        <th>5日最大浮盈</th><th>5日最大浮亏</th>
-        <th>实际退出</th><th>单笔净收益</th><th>入选次数</th>
-      </tr></thead><tbody>${rows.length ? rows.map(row => {
-        const closes = row.close_returns || {};
-        const reasons = String(row.exit_reason || '').split('+')
-          .map(reason => reasonLabels[reason] || reason).join(' / ');
-        const repeat = row.signal_count_for_code > 1
-          ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
-          : '首次且唯一';
-        const gate = Number.isFinite(row.n_strong)
-          ? `强势 ${num(row.n_strong)}<br>均涨 ${pct(row.market_open_return)}`
-          : '—';
-        const chartableCodes = selectionChartableCodes();
-        const codeCell = chartableCodes.has(row.code)
-          ? `<button class="stock-link candidate-stock-link"
-            data-code="${esc(row.code)}" data-date="${esc(row.day)}">${esc(row.code)}</button>`
-          : `<span class="stock-link-disabled" title="不在回测图表全集（多为ST/退市），无走势图">${esc(row.code)}</span>`;
-        return `<tr>
-          <td>${esc(row.day)}</td>
-          <td>${codeCell}</td>
-          <td>${esc(row.name)}</td>
-          <td>${esc(clock(row.confirmation_clock))} / ${esc(clock(row.entry_clock))}</td>
-          <td class="${tone(row.signal_return)}">${optionalPct(row.signal_return)}</td>
-          <td>${Number.isFinite(row.range_position) ? num(row.range_position, 2) : '—'}</td>
-          <td class="neutral">${gate}</td>
-          <td>${num(row.entry_price, 2)}</td>
-          <td class="${tone(closes.T0)}">${optionalPct(closes.T0)}</td>
-          <td class="${tone(closes['T+1'])}">${optionalPct(closes['T+1'])}</td>
-          <td class="${tone(closes['T+3'])}">${optionalPct(closes['T+3'])}</td>
-          <td class="${tone(closes['T+5'])}">${optionalPct(closes['T+5'])}</td>
-          <td class="${tone(row.max_floating_profit_5d)}">${optionalPct(row.max_floating_profit_5d)}</td>
-          <td class="${tone(row.max_floating_loss_5d)}">${optionalPct(row.max_floating_loss_5d)}</td>
-          <td>${esc(row.exit_day)} ${esc(clock(row.exit_clock))}<br>${esc(reasons)}</td>
-          <td class="${tone(row.net_return)}">${optionalPct(row.net_return)}</td>
-          <td>${esc(repeat)}</td>
-        </tr>`;
-      }).join('') : emptyRow(17, '当前筛选条件没有成交')}</tbody>`;
-      document.querySelectorAll('.candidate-stock-link').forEach(button => {
-        button.addEventListener('click', () =>
-          openStock(button.dataset.code, button.dataset.date));
-      });
-      return;
-    }
-    const statusLabels = {
-      audited: '已审计',
-      right_censored: '后续交易日不足',
-      corporate_action: '公司行为删失',
+    document.querySelector("#selection-count").textContent =
+      `显示 ${num(rows.length)} / ${
+        num(DATA.final_selection?.rows?.length || 0)} 笔`;
+    const reasons = {
+      weakness: "早盘走弱",
+      trailing: "回撤退出",
+      trend_break: "趋势破坏",
+      maximum_hold: "最长持有",
+      unresolved_exit_total_loss: "未能退出",
     };
-    $('#candidate-table').innerHTML = `<thead><tr>
-      <th>信号日期</th><th>代码</th><th>名称</th><th>置信分差</th>
-      <th>T0 收盘修复</th><th>T+1 收盘修复</th>
-      <th>T+2 收盘修复</th><th>T+3 收盘修复</th>
-      <th>最大修复</th><th>验证结果</th><th>入选次数</th><th>行情</th>
+    document.querySelector("#candidate-table").innerHTML = `<thead><tr>
+      <th>入场日</th><th>股票</th><th>排名 / 仓位</th>
+      <th>09:35 涨幅 / 位置 / 路径</th>
+      <th>09:36 涨幅 / 位置 / 路径</th>
+      <th>09:37 成交 / 容量</th>
+      <th>退出 / 持有</th><th>退出原因</th>
+      <th>净收益</th><th>双成本</th><th>最高价压力</th>
     </tr></thead><tbody>${rows.length ? rows.map(row => {
-      const sessions = row.session_close_recovery || {};
-      const status = row.status === 'audited'
-        ? row.large_opportunity
-          ? '≥15% 大机会'
-          : row.hit ? '≥10% 命中' : '<10% 未命中'
-        : statusLabels[row.status] || row.status;
-      const statusClass = row.status !== 'audited'
-        ? 'neutral' : row.hit ? 'up' : 'down';
-      const repeat = row.signal_count_for_code > 1
-        ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
-        : '首次且唯一';
+      const reason = String(row.exit_reason || "").split("+")
+        .map(value => reasons[value] || value).join(" / ");
+      const flags = [
+        row.top_security ? "头部贡献" : "",
+        row.best_day ? "最佳日" : "",
+      ].filter(Boolean).join(" · ");
       return `<tr>
         <td>${esc(row.day)}</td>
         <td><button class="stock-link candidate-stock-link"
-          data-code="${esc(row.code)}" data-date="${esc(row.day)}">${esc(row.code)}</button></td>
-        <td>${esc(row.name)}</td>
-        <td>${num(row.normalized_margin, 3)}</td>
-        <td class="${tone(sessions.T0)}">${optionalPct(sessions.T0)}</td>
-        <td class="${tone(sessions.T1)}">${optionalPct(sessions.T1)}</td>
-        <td class="${tone(sessions.T2)}">${optionalPct(sessions.T2)}</td>
-        <td class="${tone(sessions.T3)}">${optionalPct(sessions.T3)}</td>
-        <td class="${tone(row.maximum_close_recovery)}">${optionalPct(row.maximum_close_recovery)}</td>
-        <td class="${statusClass}">${esc(status)}</td>
-        <td>${esc(repeat)}</td>
-        <td><button class="selection-chart-button candidate-stock-link"
-          type="button" title="查看该信号日的日K与分钟走势"
-          data-code="${esc(row.code)}" data-date="${esc(row.day)}">走势图</button></td>
+          data-code="${esc(row.code)}" data-date="${esc(row.day)}"
+          type="button">${esc(row.code)}</button><br>${esc(row.name)}</td>
+        <td>Top${num(row.candidate_rank)} / ${pct(row.weight)}</td>
+        <td class="${tone(row.signal_return)}">${pct(row.signal_return)}
+          / ${num(row.range_position, 2)}
+          / ${num(row.path_efficiency, 2)}</td>
+        <td class="${tone(row.confirmation_return)}">${pct(row.confirmation_return)}
+          / ${num(row.confirmation_range_position, 2)}
+          / ${num(row.confirmation_path_efficiency, 2)}</td>
+        <td>${num(row.entry_price, 2)}
+          / ${pct(row.entry_capacity_usage)}</td>
+        <td>${esc(row.exit_day)} 09:36
+          / ${num(row.hold_days)}日</td>
+        <td>${esc(reason)}${flags ? `<br>${esc(flags)}` : ""}</td>
+        <td class="${tone(row.net_return)}">${pct(row.net_return)}</td>
+        <td class="${tone(row.double_cost_net_return)}">${pct(row.double_cost_net_return)}</td>
+        <td class="${tone(row.minute_high_net_return)}">${pct(row.minute_high_net_return)}</td>
       </tr>`;
-    }).join('') : emptyRow(12, '当前筛选条件没有信号')}</tbody>`;
-    document.querySelectorAll('.candidate-stock-link').forEach(button => {
-      button.addEventListener('click', () =>
+    }).join("") : emptyRow(11, "当前筛选条件没有交易")}</tbody>`;
+    document.querySelectorAll(".candidate-stock-link").forEach(button => {
+      button.addEventListener("click", () =>
         openStock(button.dataset.code, button.dataset.date));
     });
-  }
-
-  function renderCandidates() {
-    const payload = DATA.final_selection || {};
-    const summary = payload.summary || {};
-    const audit = payload.audit || {};
-    const sync = DATA.strategy_hub?.selection_sync || {};
-    const v502Primary = isV502Selection();
-    document.querySelector('.selection-toolbar').hidden = v502Primary;
-    document.querySelector('.candidate-table-wrap').hidden = v502Primary;
-    if (isExecutedSelection()) {
-      const periods = summary.periods || {};
-      if (isV502Selection()) {
-        const doubleCost = summary.double_cost_periods || {};
-        const highEntry = summary.minute_high_entry_periods || {};
-        $('#candidate-kpis').innerHTML = [
-          kpi('2024 收益', pct(periods['2024']?.return),
-            `回撤 ${pct(periods['2024']?.maximum_drawdown)}`,
-            tone(periods['2024']?.return)),
-          kpi('2025 收益', pct(periods['2025']?.return),
-            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
-            tone(periods['2025']?.return)),
-          kpi('2026 收益', pct(periods['2026']?.return),
-            `回撤 ${pct(periods['2026']?.maximum_drawdown)}`,
-            tone(periods['2026']?.return)),
-          kpi('2026 双成本', pct(doubleCost['2026']?.return),
-            '成本压力测试', tone(doubleCost['2026']?.return)),
-          kpi('2026 分钟最高价', pct(highEntry['2026']?.return),
-            '成交价压力测试', tone(highEntry['2026']?.return)),
-          kpi('真实资金', '未放行',
-            '去头股或最佳日后稳健门槛未通过'),
-        ].join('');
-      } else if (isV500Selection()) {
-        $('#candidate-kpis').innerHTML = [
-          kpi('实际成交', `${num(summary.entries)} 笔`,
-            `${num(summary.distinct_codes)} 只股票`),
-          kpi('逐股胜率', pct(summary.win_rate),
-            `${num(summary.profitable_entries)} / ${num(summary.closed_entries)}`),
-          kpi('2024 开发', pct(periods['2024']?.return),
-            `回撤 ${pct(periods['2024']?.maximum_drawdown)}`,
-            tone(periods['2024']?.return)),
-          kpi('2025 开发', pct(periods['2025']?.return),
-            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
-            tone(periods['2025']?.return)),
-          kpi('2026 只读验证', pct(periods['2026YTD']?.return),
-            `回撤 ${pct(periods['2026YTD']?.maximum_drawdown)}`,
-            tone(periods['2026YTD']?.return)),
-          kpi('2026 双成本 / 去头股',
-            `${pct(periods['2026YTD']?.double_cost_return)} / ${pct(summary.return_without_top_security_2026)}`,
-            '无杠杆组合口径', tone(periods['2026YTD']?.double_cost_return)),
-        ].join('');
-      } else if (isV470Selection()) {
-        $('#candidate-kpis').innerHTML = [
-          kpi('实际入场', `${num(summary.entries)} 笔`,
-            `${num(summary.distinct_codes)} 只股票`),
-          kpi('闭环胜率', pct(summary.win_rate),
-            `${num(summary.profitable_entries)} / ${num(summary.closed_entries)}`),
-          kpi('2024 开发', pct(periods['2024']?.return),
-            `回撤 ${pct(periods['2024']?.maximum_drawdown)}`,
-            tone(periods['2024']?.return)),
-          kpi('2025 验证', pct(periods['2025']?.return),
-            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
-            tone(periods['2025']?.return)),
-          kpi('2026 盲测', pct(periods['2026YTD']?.return),
-            `回撤 ${pct(periods['2026YTD']?.maximum_drawdown)}`,
-            tone(periods['2026YTD']?.return)),
-          kpi('2026 双成本 / 去头股',
-            `${pct(periods['2026YTD']?.double_cost_return)} / ${pct(summary.return_without_top_security_2026)}`,
-            '等权日收益口径', tone(periods['2026YTD']?.double_cost_return)),
-        ].join('');
-      } else if (isV442Selection()) {
-        $('#candidate-kpis').innerHTML = [
-          kpi('实际入场', `${num(summary.entries)} 笔`,
-            `${num(summary.distinct_codes)} 只股票`),
-          kpi('闭环胜率', pct(summary.win_rate),
-            `${num(summary.profitable_entries)} / ${num(summary.closed_entries)}`),
-          kpi('2024H2', pct(periods['2024H2']?.return),
-            `回撤 ${pct(periods['2024H2']?.maximum_drawdown)}`,
-            tone(periods['2024H2']?.return)),
-          kpi('2025 验证', pct(periods['2025']?.return),
-            `回撤 ${pct(periods['2025']?.maximum_drawdown)}`,
-            tone(periods['2025']?.return)),
-          kpi('2026 影子', pct(periods['2026YTD']?.return),
-            `回撤 ${pct(periods['2026YTD']?.maximum_drawdown)}`,
-            tone(periods['2026YTD']?.return)),
-          kpi('2026 双成本', pct(periods['2026YTD']?.double_cost_return),
-            `去除最大盈利股 ${pct(summary.return_without_top_security_2026)}`,
-            tone(periods['2026YTD']?.double_cost_return)),
-        ].join('');
-      } else {
-      $('#candidate-kpis').innerHTML = [
-        kpi('实际入场', `${num(summary.entries)} 笔`,
-          `${num(summary.distinct_codes)} 只股票`),
-        kpi('单笔胜率', pct(summary.win_rate),
-          `${num(summary.profitable_entries)} / ${num(summary.entries)}`),
-        kpi('2024 账户收益', pct(summary.total_return),
-          `最大回撤 ${pct(summary.maximum_drawdown)}`, tone(summary.total_return)),
-        kpi('H1 / H2', `${pct(summary.h1_return)} / ${pct(summary.h2_return)}`,
-          'H1 未达预注册 15% 门槛'),
-        kpi('双倍滑点收益', pct(summary.double_cost_return),
-          '单边滑点 0.10%', tone(summary.double_cost_return)),
-        kpi('剔除最大盈利股', pct(summary.return_without_top_security),
-          '集中度压力测试', tone(summary.return_without_top_security)),
-      ].join('');
-      }
-      $('#selection-strategy').textContent =
-        payload.strategy?.operational_identity || '—';
-      $('#selection-information-end').textContent =
-        payload.strategy?.information_end || '—';
-      $('#selection-training-window').textContent =
-        payload.strategy?.execution || '—';
-      $('#selection-coverage').textContent = isV502Selection()
-        ? '2024–2025 开发选择 · 2026 只读验证 · 收益最高但集中度门槛未通过'
-        : isV500Selection()
-        ? `2024–2025 开发选择 · 2026 只读验证（曾暴露，非盲测） · ${
-          payload.research_boundary?.validation_passed
-            ? '验证通过' : '验证失败，禁止针对2026调参'}`
-        : isV470Selection()
-          ? '2024 开发 · 2025 冻结验证 · 2026 盲测至 09-30 · Q4 前瞻影子待运行'
-        : isV442Selection()
-          ? '2024H2 月度留一开发 · 2025 冻结验证通过 · 2026 影子未达最终门槛'
-          : '2024 后验开发 · 2025 未独立验证';
-      $('#selection-sync-status').hidden = true;
-      const causalExit = audit.t_plus_one
-        || audit.t_plus_one_exit_intent;
-      $('#selection-integrity').textContent =
-        audit.next_minute_execution && causalExit
-          ? (
-            isV502Selection()
-              ? '因果链已核验 · 稳健门槛未通过'
-              : '因果成交链已核验'
-          )
-          : '成交链异常';
-      $('#selection-integrity').className =
-        `status ${
-          audit.next_minute_execution && causalExit && !isV502Selection()
-            ? 'ok' : 'bad'
-        }`;
-      $('#candidate-hash').textContent =
-        `${isV502Selection() ? 'V502' : isV500Selection() ? 'V500' : isV470Selection() ? 'V470' : isV442Selection() ? 'V442' : 'V421'} 展示哈希 ${audit.result_sha256 || payload.selection_sha256 || '—'}`;
-      $('#history-selection-panel').hidden = true;
-      renderSelectionTable();
-      return;
-    }
-    $('#history-selection-panel').hidden = false;
-    const primary = payload.strategy || {};
-    const account = primary.historical_account || {};
-    const strictT1 = primary.strict_t1 || {};
-    $('#candidate-kpis').innerHTML = [
-      kpi('2024H2 账户收益', pct(account['2024H2']?.return),
-        `最大回撤 ${pct(account['2024H2']?.maximum_drawdown)}`,
-        tone(account['2024H2']?.return)),
-      kpi('2025 账户收益', pct(account['2025']?.return),
-        `最大回撤 ${pct(account['2025']?.maximum_drawdown)}`,
-        tone(account['2025']?.return)),
-      kpi('2025 T+1 胜率', pct(strictT1['2025']?.retained_positive_rate),
-        `平均净收益 ${pct(strictT1['2025']?.retained_average_return)}`),
-      kpi('≥10% 修复命中率', pct(summary.hit_rate_ge_10pct),
-        `${num(summary.hits_ge_10pct)} / ${num(summary.audited)}`, 'up'),
-      kpi('≥15% 大机会占比', pct(summary.large_opportunity_rate_ge_15pct),
-        `${num(summary.large_opportunities_ge_15pct)} / ${num(summary.audited)}`, 'up'),
-      kpi('真实资金', primary.validation_scope?.real_money_enabled
-        ? '已启用' : '未放行',
-      primary.validation_scope?.v357_account_2026_validated
-        ? '2026 账户已验证' : 'V357 2026 账户待验证'),
-    ].join('');
-    $('#selection-strategy').textContent =
-      primary.id || primary.operational_identity || '—';
-    $('#selection-information-end').textContent =
-      primary.information_end || '—';
-    $('#selection-training-window').textContent =
-      primary.execution
-        || `${num(audit.training_rows)} 行 / ${num(audit.training_days)} 日`;
-    const authoritativeDay = sync.latest_authoritative_day
-      || audit.monitor_through;
-    const latestSignalDay = sync.latest_displayed_signal_day
-      || audit.latest_signal_day;
-    $('#selection-coverage').textContent = authoritativeDay
-      ? `${ymd(authoritativeDay)} · 最新信号 ${ymd(
-        latestSignalDay || '无')} · V357账户验证待完成`
-      : '等待 SuperMind 权威分钟数据';
-    const syncStatus = $('#selection-sync-status');
-    if (sync.status && sync.status !== 'ready') {
-      syncStatus.hidden = false;
-      $('#selection-sync-state').textContent =
-        sync.status === 'blocked_supermind_maintenance'
-          ? 'SuperMind 维护阻塞' : '选股同步异常';
-      $('#selection-sync-detail').textContent =
-        `权威数据至 ${ymd(authoritativeDay)} · 待补 ${
-          num(sync.pending_days?.length || 0)} 个交易日 / ${
-          num(sync.pending_stock_days || 0)} 股票日`;
-      $('#selection-sync-updated').textContent =
-        `状态更新 ${dt(sync.updated_at)}`;
-    } else {
-      syncStatus.hidden = true;
-    }
-    $('#selection-integrity').textContent =
-      audit.hash_chain_verified ? '冻结链已核验' : '冻结链异常';
-    $('#selection-integrity').className =
-      `status ${audit.hash_chain_verified ? 'ok' : 'bad'}`;
-    $('#candidate-hash').textContent = payload.freeze_sha256
-      ? `V344+V357 主策略哈希 ${payload.freeze_sha256}`
-      : 'V344+V357 主策略哈希 —';
-    renderSelectionTable();
-  }
-
-  function historySelectionRows() {
-    return DATA.selection_history?.rows || [];
-  }
-
-  function filteredHistorySelections() {
-    const period = $('#history-selection-period').value;
-    const result = $('#history-selection-result').value;
-    const role = $('#history-selection-role').value;
-    const repeat = $('#history-selection-repeat').value;
-    const query = $('#history-selection-search').value.trim().toLowerCase();
-    return historySelectionRows().filter(row => {
-      if (period !== 'all' && row.quarter !== period) return false;
-      if (
-        role === 'training_in_sample_replay'
-        && row.sample_role !== role
-      ) return false;
-      if (
-        role === 'causal'
-        && row.sample_role === 'training_in_sample_replay'
-      ) return false;
-      if (query && !`${row.code}${row.name}`.toLowerCase().includes(query)) {
-        return false;
-      }
-      if (repeat === 'first' && row.sequence_no !== 1) return false;
-      if (repeat === 'repeat' && !row.is_repeat) return false;
-      if (result === 'large' && row.large_opportunity !== true) return false;
-      if (
-        result === 'hit'
-        && !(row.hit === true && row.large_opportunity !== true)
-      ) return false;
-      if (result === 'miss' && row.hit !== false) return false;
-      return true;
-    });
-  }
-
-  function renderHistorySelectionTable() {
-    const rows = filteredHistorySelections();
-    const audited = rows.filter(row => row.status === 'audited');
-    const hits = audited.filter(row => row.hit === true).length;
-    const large = audited.filter(
-      row => row.large_opportunity === true).length;
-    const uniqueCodes = new Set(rows.map(row => row.code)).size;
-    const role = $('#history-selection-role').value;
-    const roleNote = {
-      all: '混合展示 · 不作统一验证结论',
-      training_in_sample_replay: '训练内回溯 · 仅用于形态观察',
-      causal: '2024H2 开发评估 + 2025 跨年复核',
-    }[role];
-    $('#history-selection-kpis').innerHTML = [
-      kpi('当前信号', `${num(rows.length)} 条`,
-        `${num(uniqueCodes)} 只股票`),
-      kpi('有效审计', `${num(audited.length)} 条`, roleNote),
-      kpi('≥10% 修复命中率',
-        audited.length ? pct(hits / audited.length) : '—',
-        `${num(hits)} / ${num(audited.length)}`, 'up'),
-      kpi('≥15% 大机会占比',
-        audited.length ? pct(large / audited.length) : '—',
-        `${num(large)} / ${num(audited.length)}`, 'up'),
-    ].join('');
-    $('#history-selection-count').textContent =
-      `显示 ${num(rows.length)} / ${num(historySelectionRows().length)} 条`;
-    const roleLabels = {
-      training_in_sample_replay: '训练内回溯',
-      development_evaluation: '开发期评估',
-      crossyear_review: '跨年复核',
-    };
-    $('#history-selection-table').innerHTML = `<thead><tr>
-      <th>信号日期</th><th>代码</th><th>名称</th><th>样本性质</th><th>置信分差</th>
-      <th>T0 收盘修复</th><th>T+1 收盘修复</th>
-      <th>T+2 收盘修复</th><th>T+3 收盘修复</th>
-      <th>最大修复</th><th>验证结果</th><th>入选次数</th>
-    </tr></thead><tbody>${rows.length ? rows.map(row => {
-      const sessions = row.session_close_recovery || {};
-      const status = row.large_opportunity
-        ? '≥15% 大机会'
-        : row.hit ? '≥10% 命中' : '<10% 未命中';
-      const repeat = row.signal_count_for_code > 1
-        ? `第 ${num(row.sequence_no)} 次 / 共 ${num(row.signal_count_for_code)} 次`
-        : '首次且唯一';
-      return `<tr>
-        <td>${esc(row.day)}</td><td>${esc(row.code)}</td>
-        <td>${esc(row.name)}</td>
-        <td class="${row.sample_role === 'training_in_sample_replay'
-          ? 'neutral' : ''}">${esc(roleLabels[row.sample_role] || row.sample_role)}</td>
-        <td>${num(row.normalized_margin, 3)}</td>
-        <td class="${tone(sessions.T0)}">${optionalPct(sessions.T0)}</td>
-        <td class="${tone(sessions.T1)}">${optionalPct(sessions.T1)}</td>
-        <td class="${tone(sessions.T2)}">${optionalPct(sessions.T2)}</td>
-        <td class="${tone(sessions.T3)}">${optionalPct(sessions.T3)}</td>
-        <td class="${tone(row.maximum_close_recovery)}">${optionalPct(row.maximum_close_recovery)}</td>
-        <td class="${row.hit ? 'up' : 'down'}">${esc(status)}</td>
-        <td>${esc(repeat)}</td>
-      </tr>`;
-    }).join('') : emptyRow(12, '当前筛选条件没有历史信号')}</tbody>`;
-  }
-
-  function renderHistorySelections() {
-    const payload = DATA.selection_history || {};
-    $('#history-selection-integrity').textContent =
-      payload.sha256 ? '历史源已固化' : '历史源异常';
-    $('#history-selection-integrity').className =
-      `status ${payload.sha256 ? 'ok' : 'bad'}`;
-    renderHistorySelectionTable();
   }
 
   function filteredStocks() {
@@ -2793,10 +2388,9 @@
         DATA.final_selection?.strategy?.operational_identity],
       ['选股信息截止',
         DATA.final_selection?.strategy?.information_end],
-      ['未来收益参与选股',
-        DATA.final_selection?.audit?.selection_outcomes_used ? '是' : '否'],
-      ['选股验证指标',
-        DATA.final_selection?.opportunity_definition?.metric],
+      ['收益回撤冻结',
+        DATA.final_selection?.audit?.metrics_exactly_frozen
+          ? '已锁定' : '异常'],
       ['全天风险门', DATA.research?.signal_quality?.entry_contract?.guard],
       ['全天风险门成交', DATA.research?.signal_quality?.entry_contract?.fill],
       ['收益模型控制买入',
@@ -2832,13 +2426,7 @@
       quality_selection: '优质多头影子筛选',
       winner_shadow: '即时影子',
       candidate_history: 'v6历史机会',
-      final_selection_freeze: 'V344策略冻结',
-      final_selection_signals: 'V343冻结信号',
-      final_selection_detail: 'V343逐股验证',
-      final_selection_result: 'V343验证结论',
-      final_selection_manifest: '2026股票清单',
-      final_selection_live: '冻结策略盘后增量',
-      strategy_selection_dashboard: 'V500选股成交明细',
+      strategy_hub: 'V502主策略中心',
       chart_manifest: '个股图表资源',
     };
     const rows = Object.entries(DATA.source_status || {}).map(([key, value]) =>
@@ -2872,16 +2460,9 @@
     $('#stock-prev').addEventListener('click', () => { stockPage -= 1; renderStocks(); });
     $('#stock-next').addEventListener('click', () => { stockPage += 1; renderStocks(); });
     [
-      'selection-period', 'selection-result',
-      'selection-repeat', 'selection-search',
+      "selection-year", "selection-result", "selection-search",
     ].forEach(id => document.getElementById(id).addEventListener(
-      'input', renderSelectionTable));
-    [
-      'history-selection-period', 'history-selection-result',
-      'history-selection-role', 'history-selection-repeat',
-      'history-selection-search',
-    ].forEach(id => document.getElementById(id).addEventListener(
-      'input', renderHistorySelectionTable));
+      "input", renderSelectionTable));
     $('#stock-daily-tab').addEventListener(
       'click', () => setStockMarketView('daily'));
     $('#stock-minute-tab').addEventListener(
@@ -2912,7 +2493,7 @@
         loadFirst(dataPaths('api/paper', 'paper.json')),
       ]);
       if (
-        (!DATA.final_selection || !DATA.selection_history)
+        !DATA.final_selection
         && !staticHost
       ) {
         DATA = await loadFirst([`data.json?t=${Date.now()}`]);
@@ -2923,7 +2504,6 @@
       renderHeader();
       renderOverview();
       renderCandidates();
-      renderHistorySelections();
       renderStocks();
       renderPaper();
       renderResearch();
