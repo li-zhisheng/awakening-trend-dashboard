@@ -410,9 +410,9 @@
       <th>入场日</th><th>股票</th><th>排名 / 仓位</th>
       <th>09:35 涨幅 / 位置 / 路径</th>
       <th>09:36 涨幅 / 位置 / 路径</th>
-      <th>09:37 成交 / 容量</th>
+      <th>09:37 买入价 / 涨跌幅</th>
       <th>退出 / 持有</th><th>退出原因</th>
-      <th>净收益</th><th>双成本</th><th>最高价压力</th>
+      <th>卖出价 / 当日涨跌幅</th><th>实际净收益</th>
     </tr></thead><tbody>${rows.length ? rows.map(row => {
       const reason = String(row.exit_reason || "").split("+")
         .map(value => reasons[value] || value).join(" / ");
@@ -433,15 +433,15 @@
           / ${num(row.confirmation_range_position, 2)}
           / ${num(row.confirmation_path_efficiency, 2)}</td>
         <td>${num(row.entry_price, 2)}
-          / ${pct(row.entry_capacity_usage)}</td>
+          / <span class="${tone(row.entry_return)}">${pct(row.entry_return)}</span></td>
         <td>${esc(row.exit_day)} 09:36
           / ${num(row.hold_days)}日</td>
         <td>${esc(reason)}${flags ? `<br>${esc(flags)}` : ""}</td>
+        <td>${num(row.exit_price, 2)}
+          / <span class="${tone(row.exit_day_return)}">${pct(row.exit_day_return)}</span></td>
         <td class="${tone(row.net_return)}">${pct(row.net_return)}</td>
-        <td class="${tone(row.double_cost_net_return)}">${pct(row.double_cost_net_return)}</td>
-        <td class="${tone(row.minute_high_net_return)}">${pct(row.minute_high_net_return)}</td>
       </tr>`;
-    }).join("") : emptyRow(11, "当前筛选条件没有交易")}</tbody>`;
+    }).join("") : emptyRow(10, "当前筛选条件没有交易")}</tbody>`;
     document.querySelectorAll(".candidate-stock-link").forEach(button => {
       button.addEventListener("click", () =>
         openStock(button.dataset.code, button.dataset.date));
