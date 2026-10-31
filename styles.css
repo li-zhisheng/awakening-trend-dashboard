@@ -122,7 +122,7 @@ input,select{
   display:inline-block;padding:4px 7px;border:1px solid var(--line);
   border-radius:3px;font-size:12px;white-space:nowrap;
 }
-.candidate-state.old_frozen_trade{color:#8edce0;border-color:#3f6f78}
+.candidate-state.primary_trade{color:#8edce0;border-color:#3f6f78}
 .candidate-state.observation_candidate{color:#f0c96a;border-color:#705d2e}
 .candidate-state.entry_unfillable{color:#8ea0a7;border-color:#46545a}
 .selection-chart-button{

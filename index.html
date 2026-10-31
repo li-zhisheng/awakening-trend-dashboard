@@ -8,7 +8,7 @@
   <title>多空指标 · 历史回测与实盘验证</title>
   <link rel="stylesheet" href="styles.css?v=20261101-complete-candidates">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261101-complete-candidates" defer></script>
+  <script src="app.js?v=20261101-v502u-primary" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -97,7 +97,7 @@
         </select></label>
         <label>状态<select id="selection-status">
           <option value="all">全部候选</option>
-          <option value="old_frozen_trade">旧账户已交易</option>
+          <option value="primary_trade">主账户已交易</option>
           <option value="observation_candidate">观察候选</option>
           <option value="entry_unfillable">成交约束未通过</option>
         </select></label>
@@ -108,7 +108,7 @@
         <div class="panel-head">
           <div>
             <h2>V502 每日Top2候选明细</h2>
-            <p>全部09:36确认候选均展示；旧账户是否交易仅作为状态，不再过滤候选</p>
+            <p>全部09:36确认候选均展示；V502-U主账户交易与观察候选分开标记</p>
           </div>
           <span id="selection-integrity" class="status">--</span>
         </div>

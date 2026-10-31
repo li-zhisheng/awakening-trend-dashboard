@@ -364,7 +364,7 @@
       strategy.execution || "—";
     document.querySelector("#selection-coverage").textContent =
       strict
-        ? "2024–2025 开发选择 · 2026 只读验证"
+        ? "V502-U无限持有 · 双槽独立账户"
         : "旧冻结收益已撤销 · 因果账户待重新冻结";
     document.querySelector("#selection-integrity").textContent =
       strict
@@ -373,8 +373,8 @@
     document.querySelector("#selection-integrity").className =
       "status " + (strict ? "ok" : "bad");
     document.querySelector("#candidate-hash").textContent =
-      "因果审计哈希 "
-      + (audit.future_exit_audit_sha256 || "—");
+      "主账户哈希 "
+      + (audit.result_sha256 || "—");
     renderSelectionTable();
   }
 
@@ -404,6 +404,10 @@
     });
   }
 
+  function selectionRows() {
+    return DATA.final_selection?.rows || [];
+  }
+
   function renderSelectionTable() {
     const rows = filteredSelections();
     document.querySelector("#selection-count").textContent =
@@ -417,7 +421,7 @@
       unresolved_exit_total_loss: "未能退出",
     };
     const statuses = {
-      old_frozen_trade: "旧账户已交易",
+      primary_trade: "主账户已交易",
       observation_candidate: "观察候选",
       entry_unfillable: "成交约束未通过",
     };
@@ -449,14 +453,14 @@
           pct(row.confirmation_return)}</td>
         <td>${num(row.entry_price, 2)}
           / <span class="${tone(row.entry_return)}">${pct(row.entry_return)}</span></td>
-        <td>${row.old_frozen_trade
+        <td>${row.primary_trade
           ? `${esc(row.exit_day)} ${clock(row.exit_clock)}
             / ${num(row.hold_days)}日`
           : "—"}</td>
-        <td>${row.old_frozen_trade
+        <td>${row.primary_trade
           ? `${esc(reason)}${flags ? `<br>${esc(flags)}` : ""}`
           : esc(row.candidate_status_reason)}</td>
-        <td>${row.old_frozen_trade
+        <td>${row.primary_trade
           ? `${num(row.exit_price, 2)}
             / <span class="${tone(row.exit_day_return)}">${
               optionalPct(row.exit_day_return)}</span>`
@@ -545,6 +549,24 @@
     return stockSignalMarkCache.get(code);
   }
 
+  async function loadCandidateDaily(code) {
+    try {
+      const value = await loadFirst([
+        `candidate-daily/${code.slice(0, 2)}/${code}.json`,
+      ]);
+      if (
+        value.schema !== 'awakening-candidate-daily-v1'
+        || value.code !== code
+        || !Array.isArray(value.bars)
+      ) {
+        throw new Error('候选日K补充数据不完整');
+      }
+      return value.bars;
+    } catch (_error) {
+      return [];
+    }
+  }
+
   async function loadStockDaily(code) {
     if (!stockDailyCache.has(code)) {
       const value = await loadFirst([
@@ -557,6 +579,19 @@
         || !value.bars.length
       ) {
         throw new Error('日K数据不完整');
+      }
+      const candidateBars = await loadCandidateDaily(code);
+      if (candidateBars.length) {
+        const merged = new Map(
+          value.bars.map(row => [String(row[0]), row]));
+        for (const row of candidateBars) {
+          if (Array.isArray(row) && row.length >= 6) {
+            merged.set(String(row[0]), row);
+          }
+        }
+        value.bars = [...merged.values()].sort(
+          (left, right) => String(left[0]).localeCompare(
+            String(right[0])));
       }
       const signalMarks = await loadStockSignalMarks(code);
       value.intradayMarks = signalMarks.marks;
@@ -678,10 +713,12 @@
   }
 
   function stockCandidateForDate(code, date) {
-    const normalized = String(date || '').replace(
-      /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+    const compact = String(date || '').replaceAll('-', '');
     return selectionRows().find(
-      row => row.day === normalized && row.code === code) || null;
+      row => (
+        String(row.day || '').replaceAll('-', '') === compact
+        && row.code === code
+      )) || null;
   }
 
   function intradayMarksForDate(daily, date) {
@@ -810,6 +847,22 @@
 
   function parseArchivedMinute(payload, code, date, daily) {
     const compact = String(date || '').replaceAll('-', '');
+    if (
+      payload?.schema === 'awakening-candidate-minute-bundle-v1'
+    ) {
+      const row = (payload.days || []).find(item =>
+        item.date === compact && item.code === code);
+      if (!row) {
+        throw new Error('候选分钟包不包含目标股票日期');
+      }
+      payload = {
+        schema: 'awakening-minute-archive-stock-v1',
+        code,
+        date: compact,
+        frequency: '1m',
+        points: row.points,
+      };
+    }
     if (payload?.schema === 'awakening-minute-archive-month-v1') {
       if (
         payload.code !== code
@@ -877,6 +930,14 @@
   async function loadArchivedMinute(code, date, daily) {
     const compact = String(date || '').replaceAll('-', '');
     const month = compact.slice(0, 6);
+    try {
+      const local = await loadFirst([
+        `candidate-minutes/${month}.json.gz`,
+      ]);
+      return parseArchivedMinute(local, code, date, daily);
+    } catch (_error) {
+      // Fall through to the shared public minute archive.
+    }
     const routed = DATA.minute_archive?.month_base_urls?.[month];
     const base = String(
       routed || DATA.minute_archive?.base_url || ''
@@ -1001,7 +1062,9 @@
   }
 
   function stockDailyWindow(dates, selectedDate, visibleBars = 80) {
-    const selectedIndex = dates.indexOf(selectedDate);
+    const compact = String(selectedDate || '').replaceAll('-', '');
+    const selectedIndex = dates.findIndex(
+      date => String(date || '').replaceAll('-', '') === compact);
     const startIndex = selectedIndex >= 0
       ? Math.max(
         0,
@@ -1185,7 +1248,9 @@
         .map(mark => dates[mark.coord[0]]));
     for (const selection of selectionRows()) {
       if (selection.code !== stockMarketState?.code) continue;
-      const index = dates.indexOf(selection.day);
+      const compact = String(selection.day || '').replaceAll('-', '');
+      const index = dates.findIndex(
+        date => String(date || '').replaceAll('-', '') === compact);
       if (index < 0 || existingLongDates.has(selection.day)) continue;
       const mark = makeMark(
         index, 1, 'strong', selection.normalized_margin,
@@ -1853,6 +1918,8 @@
     const row = (DATA.stock_summary || []).find(
       item => item.code === code);
     if (!row) return;
+    const normalizedDate = String(requestedDate || '').replace(
+      /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
     $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
     $('#stock-dialog-meta').textContent =
       `年度收益 ${pct(row.annual_return)} · 闭环 ${num(row.closed_trades)} 笔 · 胜率 ${pct(row.win_rate)}`;
@@ -1865,8 +1932,8 @@
     stockMarketState = {
       code, name: row.name, daily: null, minute: null,
       minutePromises: new Map(), minuteByDate: new Map(),
-      requestedMinuteDate: '', minuteStartDate: requestedDate,
-      view: 'daily', date: requestedDate,
+      requestedMinuteDate: '', minuteStartDate: normalizedDate,
+      view: 'daily', date: normalizedDate,
     };
     $('#stock-market-status').textContent = '正在读取日K';
     $('#stock-minute-date').innerHTML = '';
@@ -1898,8 +1965,8 @@
     }
     if (stockMarketState !== state) return;
     await setStockMarketView('daily');
-    if (requestedDate && stockMarketState === state) {
-      await openStockMinuteDate(requestedDate);
+    if (normalizedDate && stockMarketState === state) {
+      await openStockMinuteDate(normalizedDate);
     }
   }
 
