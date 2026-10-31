@@ -338,24 +338,22 @@
     const summary = payload.summary || {};
     const audit = payload.audit || {};
     const periods = summary.periods || {};
-    const doubleCost = summary.double_cost_periods || {};
-    const highEntry = summary.minute_high_entry_periods || {};
+    const causalPeriods = summary.causal_replay_periods || {};
+    const strict = audit.strict_causality_verified === true;
+    const displayed = strict ? periods : causalPeriods;
     document.querySelector("#candidate-kpis").innerHTML = [
-      kpi("2024 收益", pct(periods["2024"]?.return),
-        "回撤 " + pct(periods["2024"]?.maximum_drawdown),
-        tone(periods["2024"]?.return)),
-      kpi("2025 收益", pct(periods["2025"]?.return),
-        "回撤 " + pct(periods["2025"]?.maximum_drawdown),
-        tone(periods["2025"]?.return)),
-      kpi("2026 收益", pct(periods["2026"]?.return),
-        "回撤 " + pct(periods["2026"]?.maximum_drawdown),
-        tone(periods["2026"]?.return)),
-      kpi("2026 双成本", pct(doubleCost["2026"]?.return),
-        "成本压力测试", tone(doubleCost["2026"]?.return)),
-      kpi("2026 分钟最高价", pct(highEntry["2026"]?.return),
-        "成交价压力测试", tone(highEntry["2026"]?.return)),
-      kpi("真实资金", "未放行",
-        "去头股或最佳日后稳健门槛未通过"),
+      kpi("2024 因果重放", pct(displayed["2024"]?.return),
+        "回撤 " + pct(displayed["2024"]?.maximum_drawdown),
+        tone(displayed["2024"]?.return)),
+      kpi("2025 因果重放", pct(displayed["2025"]?.return),
+        "回撤 " + pct(displayed["2025"]?.maximum_drawdown),
+        tone(displayed["2025"]?.return)),
+      kpi("2026 因果重放", pct(displayed["2026"]?.return),
+        "回撤 " + pct(displayed["2026"]?.maximum_drawdown),
+        tone(displayed["2026"]?.return)),
+      kpi("严格审计", strict ? "通过" : "未通过",
+        strict ? "未发现未来依赖" : "旧口径使用未来退出容量",
+        strict ? "up" : "down"),
     ].join("");
     const strategy = payload.strategy || {};
     document.querySelector("#selection-strategy").textContent =
@@ -365,14 +363,18 @@
     document.querySelector("#selection-training-window").textContent =
       strategy.execution || "—";
     document.querySelector("#selection-coverage").textContent =
-      "2024–2025 开发选择 · 2026 只读验证 · 收益与回撤已锁定";
+      strict
+        ? "2024–2025 开发选择 · 2026 只读验证"
+        : "旧冻结收益已撤销 · 因果账户待重新冻结";
     document.querySelector("#selection-integrity").textContent =
-      audit.metrics_exactly_frozen
-        ? "因果链与收益回撤已锁定" : "V502 基线漂移";
+      strict
+        ? "严格因果审计通过"
+        : "发现未来退出容量过滤";
     document.querySelector("#selection-integrity").className =
-      "status " + (audit.metrics_exactly_frozen ? "ok" : "bad");
+      "status " + (strict ? "ok" : "bad");
     document.querySelector("#candidate-hash").textContent =
-      "V502 展示哈希 " + (audit.result_sha256 || "—");
+      "因果审计哈希 "
+      + (audit.future_exit_audit_sha256 || "—");
     renderSelectionTable();
   }
 
