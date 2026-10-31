@@ -431,7 +431,7 @@
       <th>09:35–09:36 区间涨幅</th>
       <th>09:37 参考价 / 涨跌幅</th>
       <th>退出 / 持有</th><th>退出原因</th>
-      <th>卖出价 / 当日涨跌幅</th><th>实际净收益</th>
+      <th>卖出价 / 当日涨跌幅</th><th>净收益（真实 / 模拟）</th>
     </tr></thead><tbody>${rows.length ? rows.map(row => {
       const reason = String(row.exit_reason || "").split("+")
         .map(value => reasons[value] || value).join(" / ");
@@ -453,14 +453,16 @@
           pct(row.confirmation_return)}</td>
         <td>${num(row.entry_price, 2)}
           / <span class="${tone(row.entry_return)}">${pct(row.entry_return)}</span></td>
-        <td>${row.primary_trade
+        <td>${row.exit_day
           ? `${esc(row.exit_day)} ${clock(row.exit_clock)}
             / ${num(row.hold_days)}日`
           : "—"}</td>
         <td>${row.primary_trade
           ? `${esc(reason)}${flags ? `<br>${esc(flags)}` : ""}`
-          : esc(row.candidate_status_reason)}</td>
-        <td>${row.primary_trade
+          : `${esc(row.candidate_status_reason)}<br>
+            <span class="simulated-note">假设买入 · ${esc(reason)}</span>`
+        }</td>
+        <td>${row.exit_price !== null
           ? `${num(row.exit_price, 2)}
             / <span class="${tone(row.exit_day_return)}">${
               optionalPct(row.exit_day_return)}</span>`

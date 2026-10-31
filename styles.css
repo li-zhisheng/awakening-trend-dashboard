@@ -125,6 +125,7 @@ input,select{
 .candidate-state.primary_trade{color:#8edce0;border-color:#3f6f78}
 .candidate-state.observation_candidate{color:#f0c96a;border-color:#705d2e}
 .candidate-state.entry_unfillable{color:#8ea0a7;border-color:#46545a}
+.simulated-note{color:var(--muted);font-size:11px}
 .selection-chart-button{
   padding:5px 9px;border-color:#3f6f78;background:#13242a;
   color:#8edce0;font-size:12px;
