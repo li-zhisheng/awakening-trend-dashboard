@@ -730,6 +730,23 @@
       )) || null;
   }
 
+  function stockExitsForDate(code, date) {
+    const compact = String(date || '').replaceAll('-', '');
+    const unique = new Map();
+    for (const row of selectionRows()) {
+      if (
+        row.code !== code
+        || String(row.exit_day || '').replaceAll('-', '') !== compact
+      ) continue;
+      const key = `${row.code}/${compact}/${row.exit_clock || ''}`;
+      const current = unique.get(key);
+      if (!current?.primary_trade || row.primary_trade) {
+        unique.set(key, row);
+      }
+    }
+    return [...unique.values()];
+  }
+
   function intradayMarksForDate(daily, date) {
     const normalized = String(date || '').replace(
       /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
@@ -1207,9 +1224,19 @@
       const strong = strength === 'strong';
       const strategyBuy = kind === 'strategy_buy';
       const finalSelection = kind === 'final_selection';
+      const strategySell = kind === 'strategy_sell';
+      const simulatedSell = kind === 'simulated_sell';
       const label = finalSelection
-        ? '选股' : strategyBuy ? '买点' : signalLabel(direction, strength);
-      const color = strategyBuy
+        ? '选股'
+        : strategyBuy ? '买点'
+        : strategySell ? '卖出'
+        : simulatedSell ? '模拟卖出'
+        : signalLabel(direction, strength);
+      const color = strategySell
+        ? '#3fc28b'
+        : simulatedSell
+          ? '#7cae9b'
+        : strategyBuy
         ? '#ef6666'
         : finalSelection
           ? '#e5b94f'
@@ -1217,8 +1244,12 @@
         ? (strong ? signalColors.strongLong : signalColors.weakLong)
         : (strong ? signalColors.strongShort : signalColors.weakShort);
       const markerPrice = (
-        strategyBuy && Number.isFinite(Number(price))
+        (strategyBuy || strategySell || simulatedSell)
+        && Number.isFinite(Number(price))
       ) ? Number(price) : long ? Number(bar[3]) : Number(bar[2]);
+      const strategyExecution = (
+        strategyBuy || strategySell || simulatedSell
+      );
       return {
         name: name || label,
         direction: Number(direction),
@@ -1226,10 +1257,14 @@
         kind,
         coord: [index, markerPrice],
         value: label,
-        symbol: strategyBuy ? 'diamond' : 'circle',
-        symbolSize: strategyBuy ? 30 : 36,
+        symbol: strategyExecution
+          ? (simulatedSell ? 'triangle' : 'diamond')
+          : 'circle',
+        symbolSize: strategyExecution ? 30 : 36,
         symbolOffset: [
-          0, strategyBuy ? '-82%' : long ? '72%' : '-72%',
+          0, strategyExecution
+            ? (long ? '-82%' : '82%')
+            : long ? '72%' : '-72%',
         ],
         itemStyle: {
           color,
@@ -1282,6 +1317,33 @@
         '策略选股', 'final_selection');
       if (mark) result.push(mark);
       existingLongDates.add(selection.day);
+    }
+    const exitKeys = new Set();
+    for (const selection of selectionRows()) {
+      if (
+        selection.code !== stockMarketState?.code
+        || !selection.exit_day
+      ) continue;
+      const compact = String(
+        selection.exit_day
+      ).replaceAll('-', '');
+      const key = `${compact}/${selection.exit_clock || ''}`;
+      if (exitKeys.has(key)) continue;
+      const index = dates.findIndex(
+        date => String(date || '').replaceAll('-', '') === compact);
+      if (index < 0) continue;
+      const actual = Boolean(selection.primary_trade);
+      const mark = makeMark(
+        index,
+        -1,
+        'strong',
+        null,
+        actual ? '卖出' : '模拟卖出',
+        actual ? 'strategy_sell' : 'simulated_sell',
+        selection.exit_price,
+      );
+      if (mark) result.push(mark);
+      exitKeys.add(key);
     }
     return result;
   }
@@ -1431,13 +1493,19 @@
     instance?.off('mouseover');
     instance?.off('mouseout');
     const signalMarks = marks.filter(mark =>
-      mark.kind !== 'strategy_buy');
+      ![
+        'strategy_buy', 'final_selection',
+        'strategy_sell', 'simulated_sell',
+      ].includes(mark.kind));
     const strong = signalMarks.filter(mark =>
       mark.strength === 'strong').length;
     const weak = signalMarks.length - strong;
-    const buys = marks.length - signalMarks.length;
+    const buys = marks.filter(mark =>
+      ['strategy_buy', 'final_selection'].includes(mark.kind)).length;
+    const sells = marks.filter(mark =>
+      ['strategy_sell', 'simulated_sell'].includes(mark.kind)).length;
     const dailyStatus =
-      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 策略买点 ${buys} · 点击K线查看对应日期分时（仅真实1分钟留存日可用）`;
+      `前复权日K ${bars[0][0]} 至 ${bars.at(-1)[0]} · 强信号 ${strong} · 弱信号 ${weak} · 策略买点 ${buys} · 卖出点 ${sells} · 点击K线查看对应日期分时（仅真实1分钟留存日可用）`;
     $('#stock-market-status').textContent = dailyStatus;
     if (!instance) return;
     const renderer = instance.getZr();
@@ -1569,6 +1637,24 @@
         }
       }
     }
+    for (const exit of stockExitsForDate(state.code, date)) {
+      const requested = clock(exit.exit_clock);
+      let exitIndex = points.findIndex(point =>
+        clock(point[0]) === requested);
+      if (exitIndex < 0) {
+        exitIndex = points.findIndex(point =>
+          clock(point[0]) > requested);
+      }
+      if (exitIndex < 0) continue;
+      marks.push([
+        points[exitIndex][0],
+        -1,
+        'strong',
+        null,
+        Number(exit.exit_price) || prices[exitIndex],
+        exit.primary_trade ? 'strategy_sell' : 'simulated_sell',
+      ]);
+    }
     const span = Math.max(
       previousClose * 0.003,
       ...prices.map(price => Math.abs(price - previousClose)),
@@ -1583,14 +1669,22 @@
       const firstLong = kind === 'first_long';
       const strategyBuy = kind === 'strategy_buy';
       const finalSelection = kind === 'final_selection';
+      const strategySell = kind === 'strategy_sell';
+      const simulatedSell = kind === 'simulated_sell';
       const label = (
         finalSelection ? '策略选股'
         : firstLong ? '首次多'
         : strategyBuy ? '买点'
+        : strategySell ? '卖出'
+        : simulatedSell ? '模拟卖出'
         : signalLabel(mark[1], mark[2]));
       const price = Number(mark[4]);
       const change = (price / previousClose - 1) * 100;
-      const color = finalSelection
+      const color = strategySell
+        ? '#3fc28b'
+        : simulatedSell
+          ? '#7cae9b'
+        : finalSelection
         ? '#e5b94f'
         : firstLong
         ? '#e5b94f'
@@ -1605,28 +1699,45 @@
         name: label,
         coord: [index, price],
         value: `${label} ${changeText}`,
-        symbol: strategyBuy ? 'diamond' : 'circle',
-        symbolSize: strategyBuy ? 20 : firstLong ? 17 : weak ? 12 : 16,
+        symbol: strategyBuy || strategySell
+          ? 'diamond'
+          : simulatedSell ? 'triangle' : 'circle',
+        symbolSize: strategyBuy || strategySell || simulatedSell
+          ? 20 : firstLong ? 17 : weak ? 12 : 16,
         symbolOffset: [
           0,
-          strategyBuy ? '55%' : long ? '-55%' : '55%',
+          strategyBuy ? '55%'
+          : strategySell || simulatedSell ? '-55%'
+          : long ? '-55%' : '55%',
         ],
         itemStyle: {
           color,
           borderColor: '#101619',
-          borderWidth: strategyBuy || firstLong ? 2 : weak ? 1 : 2,
+          borderWidth: (
+            strategyBuy || strategySell
+            || simulatedSell || firstLong
+          ) ? 2 : weak ? 1 : 2,
         },
         label: {
           show: true,
-          position: strategyBuy ? 'bottom' : long ? 'top' : 'bottom',
-          distance: strategyBuy || firstLong ? 22 : weak ? 16 : 22,
+          position: strategyBuy
+            ? 'bottom'
+            : strategySell || simulatedSell ? 'top'
+            : long ? 'top' : 'bottom',
+          distance: (
+            strategyBuy || strategySell
+            || simulatedSell || firstLong
+          ) ? 22 : weak ? 16 : 22,
           color,
           backgroundColor: 'rgba(13,17,20,.92)',
           borderColor: color,
           borderWidth: 1,
           borderRadius: 3,
           padding: [3, 5],
-          fontSize: strategyBuy || firstLong ? 10 : weak ? 9 : 10,
+          fontSize: (
+            strategyBuy || strategySell
+            || simulatedSell || firstLong
+          ) ? 10 : weak ? 9 : 10,
           lineHeight: 14,
           fontWeight: 700,
           formatter: (
@@ -1787,6 +1898,8 @@
       const label = (
         kind === 'first_long' ? '首次多'
         : kind === 'strategy_buy' ? '买点'
+        : kind === 'strategy_sell' ? '卖出'
+        : kind === 'simulated_sell' ? '模拟卖出'
         : signalLabel(mark[1], mark[2]));
       return `${clock(mark[0])} ${label}`;
     });
