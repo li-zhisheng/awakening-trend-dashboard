@@ -583,7 +583,15 @@
       ) {
         throw new Error('日K数据不完整');
       }
-      const candidateBars = await loadCandidateDaily(code);
+      const [
+        candidateBars,
+        signalMarks,
+        live,
+      ] = await Promise.all([
+        loadCandidateDaily(code),
+        loadStockSignalMarks(code),
+        loadStockLive(code),
+      ]);
       if (candidateBars.length) {
         const merged = new Map(
           value.bars.map(row => [String(row[0]), row]));
@@ -596,9 +604,7 @@
           (left, right) => String(left[0]).localeCompare(
             String(right[0])));
       }
-      const signalMarks = await loadStockSignalMarks(code);
       value.intradayMarks = signalMarks.marks;
-      const live = await loadStockLive(code);
       if (live) {
         const bars = value.bars.slice();
         const liveSignals = [];
