@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0d1114">
   <link rel="icon" href="data:,">
   <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261101-complete-candidates">
+  <link rel="stylesheet" href="styles.css?v=20261101-price-limits">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261101-candidate-detail" defer></script>
+  <script src="app.js?v=20261101-price-limits" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -288,6 +288,7 @@
       </div>
       <span id="stock-market-status">正在读取行情数据</span>
     </div>
+    <div id="stock-limit-band" class="stock-limit-band" hidden></div>
     <div id="stock-detail-chart" class="chart stock-market-chart"></div>
     <div class="split-grid">
       <section><h3>月度收益</h3><div class="table-wrap"><table id="stock-monthly"></table></div></section>
