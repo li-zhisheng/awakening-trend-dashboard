@@ -13,6 +13,7 @@
   const stockDailyCache = new Map();
   const stockSignalMarkCache = new Map();
   const stockMinuteCache = new Map();
+  const candidateHistoryCache = new Map();
   const stockLiveCache = new Map();
   const staticHost = location.hostname.endsWith('.github.io');
   const signalColors = {
@@ -933,6 +934,18 @@
     const compact = String(date || '').replaceAll('-', '');
     const month = compact.slice(0, 6);
     try {
+      const historyKey = `${month}/${code.slice(0, 3)}`;
+      if (!candidateHistoryCache.has(historyKey)) {
+        candidateHistoryCache.set(historyKey, loadFirst([
+          `candidate-history-minutes/${historyKey}.json.gz`,
+        ]));
+      }
+      const history = await candidateHistoryCache.get(historyKey);
+      return parseArchivedMinute(history, code, date, daily);
+    } catch (_error) {
+      // Fall through to the compact candidate-day bundle.
+    }
+    try {
       const local = await loadFirst([
         `candidate-minutes/${month}.json.gz`,
       ]);
@@ -1779,16 +1792,13 @@
   }
 
   function stockMinuteDates(state) {
-    const startDate = String(state?.minuteStartDate || '');
-    const followupDates = startDate
-      ? (state?.daily?.bars || [])
-        .map(row => String(row?.[0] || ''))
-        .filter(day => day >= startDate)
-      : [];
+    const dailyDates = (state?.daily?.bars || [])
+      .map(row => String(row?.[0] || ''))
+      .filter(Boolean);
     return [...new Set([
       ...(state ? [...state.minuteByDate.keys()] : []),
       ...((state?.daily?.intradayMarks || []).map(mark => mark[0])),
-      ...followupDates,
+      ...dailyDates,
     ])].sort();
   }
 
