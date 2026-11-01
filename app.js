@@ -934,10 +934,14 @@
     const compact = String(date || '').replaceAll('-', '');
     const month = compact.slice(0, 6);
     try {
-      const historyKey = `${month}/${code.slice(0, 3)}`;
+      const year = compact.slice(0, 4);
+      const quarter = Math.floor(
+        (Number(compact.slice(4, 6)) - 1) / 3) + 1;
+      const historyKey = `${year}/q${quarter}/${code}`;
       if (!candidateHistoryCache.has(historyKey)) {
         candidateHistoryCache.set(historyKey, loadFirst([
-          `candidate-history-minutes/${historyKey}.json.gz`,
+          `candidate-history-minutes/${year}/q${quarter}/${
+            code.slice(0, 3)}/${code}.json.gz`,
         ]));
       }
       const history = await candidateHistoryCache.get(historyKey);
