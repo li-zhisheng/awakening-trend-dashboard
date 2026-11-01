@@ -572,26 +572,28 @@
 
   async function loadStockDaily(code) {
     if (!stockDailyCache.has(code)) {
-      const value = await loadFirst([
-        `stocks/${code.slice(0, 2)}/${code}.json`,
-      ]);
-      if (
-        value.schema !== 'awakening-stock-daily-v1'
-        || value.code !== code
-        || !Array.isArray(value.bars)
-        || !value.bars.length
-      ) {
-        throw new Error('日K数据不完整');
-      }
       const [
+        stockDaily,
         candidateBars,
         signalMarks,
         live,
       ] = await Promise.all([
+        loadFirst([
+          `stocks/${code.slice(0, 2)}/${code}.json`,
+        ]).catch(() => null),
         loadCandidateDaily(code),
-        loadStockSignalMarks(code),
+        loadStockSignalMarks(code).catch(() => ({ marks: [] })),
         loadStockLive(code),
       ]);
+      const value = (
+        stockDaily?.schema === 'awakening-stock-daily-v1'
+        && stockDaily.code === code
+        && Array.isArray(stockDaily.bars)
+      ) ? stockDaily : {
+        schema: 'awakening-stock-daily-v1',
+        code,
+        bars: [],
+      };
       if (candidateBars.length) {
         const merged = new Map(
           value.bars.map(row => [String(row[0]), row]));
@@ -603,6 +605,9 @@
         value.bars = [...merged.values()].sort(
           (left, right) => String(left[0]).localeCompare(
             String(right[0])));
+      }
+      if (!value.bars.length) {
+        throw new Error('日K数据不完整');
       }
       value.intradayMarks = signalMarks.marks;
       if (live) {
@@ -2050,14 +2055,21 @@
   }
 
   async function openStock(code, requestedDate = '') {
-    const row = (DATA.stock_summary || []).find(
-      item => item.code === code);
-    if (!row) return;
     const normalizedDate = String(requestedDate || '').replace(
       /^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+    const accountRow = (DATA.stock_summary || []).find(
+      item => item.code === code);
+    const candidateRow = stockCandidateForDate(code, normalizedDate)
+      || selectionRows().find(item => item.code === code);
+    const row = accountRow || candidateRow;
+    if (!row) return;
     $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
-    $('#stock-dialog-meta').textContent =
-      `年度收益 ${pct(row.annual_return)} · 闭环 ${num(row.closed_trades)} 笔 · 胜率 ${pct(row.win_rate)}`;
+    $('#stock-dialog-meta').textContent = accountRow
+      ? `年度收益 ${pct(accountRow.annual_return)} · 闭环 ${
+        num(accountRow.closed_trades)} 笔 · 胜率 ${pct(accountRow.win_rate)}`
+      : `候选日 ${ymd(candidateRow?.day)} · ${
+        candidateRow?.primary_trade ? '主账户已交易' : '候选观察'
+      } · 无旧版个股账户汇总`;
     $('#stock-monthly').innerHTML =
       `<tbody>${emptyRow(6, '正在读取账户明细')}</tbody>`;
     $('#stock-executions').innerHTML =
