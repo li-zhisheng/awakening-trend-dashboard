@@ -13,6 +13,8 @@ const signedPct = (value) => Number.isFinite(Number(value))
   ? `${Number(value) > 0 ? '+' : ''}${(Number(value) * 100).toFixed(2)}%`
   : '--';
 const buyGainLabel = value => `买 ${signedPct(value)}`;
+const sellGainLabel = (value, simulated = false) =>
+  `${simulated ? '模拟卖' : '卖'} ${signedPct(value)}`;
 const money = (value) => Number.isFinite(Number(value))
   ? Number(value).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
@@ -176,6 +178,15 @@ const selectionEntryReturn = (selection, code) => {
     item.code === code
     && compactDay(item.day) === compactDay(selection?.day)
   )?.entry_return;
+};
+const selectionExitDayReturn = (selection, code) => {
+  if (Number.isFinite(Number(selection?.exit_day_return))) {
+    return Number(selection.exit_day_return);
+  }
+  return DATA.candidate_rows.find(item =>
+    item.code === code
+    && compactDay(item.day) === compactDay(selection?.day)
+  )?.exit_day_return;
 };
 const signalLabel = (direction, strength) => {
   const long = Number(direction) === 1;
@@ -544,6 +555,10 @@ function dailyMarketMarks(daily) {
       selection.exit_price,
       null,
       selection.exit_clock,
+      sellGainLabel(
+        selectionExitDayReturn(selection, daily.code),
+        selection.candidate_status !== 'primary_trade',
+      ),
     );
     if (sell) marks.push(sell);
     exitKeys.add(key);
@@ -854,7 +869,11 @@ function minuteMarketMarks(minute) {
         padding: [2, 4],
         fontSize: 9,
         fontWeight: 700,
-        formatter: kind === 'strategy_buy'
+        formatter: [
+          'strategy_buy',
+          'strategy_sell',
+          'simulated_sell',
+        ].includes(kind)
           ? label
           : `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`,
       },
@@ -887,7 +906,10 @@ function minuteMarketMarks(minute) {
     if (compactDay(selection.exit_day) === day) {
       const actual = selection.candidate_status === 'primary_trade';
       const sell = makeMark(
-        actual ? '卖出' : '模拟卖出',
+        sellGainLabel(
+          selectionExitDayReturn(selection, row.code),
+          !actual,
+        ),
         selection.exit_clock,
         -1,
         'strong',
