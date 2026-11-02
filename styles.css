@@ -277,6 +277,64 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: var(--muted);
   font-size: 12px;
 }
+#stock-minute-nav { display: flex; align-items: center; gap: 6px; }
+#stock-minute-nav[hidden] { display: none; }
+#stock-minute-nav > button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+#stock-minute-date-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.stock-limit-band {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.stock-limit-band[hidden] { display: none; }
+.limit-date { margin-right: 2px; color: var(--muted); font-size: 12px; }
+.limit-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #141d21;
+}
+.limit-chip b { font-size: 12px; }
+.limit-chip small { color: var(--muted); font-size: 10px; }
+.limit-chip.up {
+  border-color: rgba(239, 102, 102, .45);
+  background: rgba(239, 102, 102, .08);
+}
+.limit-chip.down {
+  border-color: rgba(63, 194, 139, .45);
+  background: rgba(63, 194, 139, .08);
+}
+.limit-touch {
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--muted);
+  background: #182126;
+  font-size: 12px;
+}
+.limit-touch.up { background: rgba(239, 102, 102, .12); }
+.limit-touch.down { background: rgba(63, 194, 139, .12); }
 .stock-market-chart {
   width: 100%;
   height: 420px;
@@ -321,7 +379,14 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   dialog { width: calc(100vw - 12px); max-height: 95vh; }
   .dialog-head { padding: 14px; }
   .market-toolbar { align-items: flex-start; flex-direction: column; padding: 10px 14px; }
+  #stock-minute-nav { width: 100%; }
+  #stock-minute-date-wrap { min-width: 0; flex: 1; }
+  #stock-minute-date { min-width: 0; flex: 1; }
   #stock-market-status { width: 100%; margin-left: 0; }
+  .stock-limit-band { align-items: stretch; }
+  .limit-date { width: 100%; }
+  .limit-chip { flex: 1; justify-content: space-between; min-width: 140px; }
+  .limit-touch { width: 100%; margin-left: 0; text-align: center; }
   .stock-market-chart { height: 390px; padding: 0; }
   .detail-strip { grid-template-columns: repeat(2, 1fr); }
   .detail-strip div:nth-child(2) { border-right: 0; }

@@ -171,6 +171,146 @@ const signalLabel = (direction, strength) => {
     : (long ? '多' : '空');
 };
 
+function roundPriceLimit(value) {
+  return Math.floor((Number(value) + 1e-8) * 100 + .5) / 100;
+}
+
+function stockPriceLimitInfo(previousClose, name = '', prices = {}) {
+  const reference = Number(previousClose);
+  if (!Number.isFinite(reference) || reference <= 0) return null;
+  const high = Number(prices.high);
+  const low = Number(prices.low);
+  const close = Number(prices.close);
+  let rate = /(?:\*ST|ST)/i.test(String(name)) ? .05 : .10;
+  const fivePercentUpper = roundPriceLimit(reference * 1.05);
+  if (
+    rate === .05
+    && Number.isFinite(high)
+    && high > fivePercentUpper + .0051
+  ) {
+    rate = .10;
+  }
+  const upper = roundPriceLimit(reference * (1 + rate));
+  const lower = roundPriceLimit(reference * (1 - rate));
+  const tolerance = .0051;
+  if (
+    (Number.isFinite(high) && high > upper + tolerance)
+    || (Number.isFinite(low) && low < lower - tolerance)
+  ) {
+    return {
+      rate: null,
+      upper: null,
+      lower: null,
+      unlimited: true,
+      hitUp: false,
+      hitDown: false,
+      closeUp: false,
+      closeDown: false,
+    };
+  }
+  return {
+    rate,
+    upper,
+    lower,
+    unlimited: false,
+    hitUp: Number.isFinite(high) && high >= upper - tolerance,
+    hitDown: Number.isFinite(low) && low <= lower + tolerance,
+    closeUp: Number.isFinite(close) && close >= upper - tolerance,
+    closeDown: Number.isFinite(close) && close <= lower + tolerance,
+  };
+}
+
+function stockLimitLabel(info) {
+  if (!info) return '';
+  if (info.unlimited) return '无固定涨跌停价';
+  if (info.closeUp) return '封涨停';
+  if (info.closeDown) return '封跌停';
+  if (info.hitUp && info.hitDown) return '盘中触及涨停和跌停';
+  if (info.hitUp) return '盘中触及涨停';
+  if (info.hitDown) return '盘中触及跌停';
+  return '未触及涨跌停';
+}
+
+function renderStockLimitBand(info, day) {
+  const node = $('#stock-limit-band');
+  if (!info) {
+    node.hidden = true;
+    node.innerHTML = '';
+    return;
+  }
+  if (info.unlimited) {
+    node.hidden = false;
+    node.innerHTML = `
+      <span class="limit-date">${dayText(day)}</span>
+      <span class="limit-touch">${stockLimitLabel(info)}</span>`;
+    return;
+  }
+  const rate = `${(info.rate * 100).toFixed(0)}%`;
+  const stateClass = (
+    info.closeUp || info.hitUp ? 'up'
+      : info.closeDown || info.hitDown ? 'down' : ''
+  );
+  node.hidden = false;
+  node.innerHTML = `
+    <span class="limit-date">${dayText(day)}</span>
+    <span class="limit-chip up"><b>涨停</b>${info.upper.toFixed(2)}
+      <small>+${rate}</small></span>
+    <span class="limit-chip down"><b>跌停</b>${info.lower.toFixed(2)}
+      <small>-${rate}</small></span>
+    <span class="limit-touch ${stateClass}">${stockLimitLabel(info)}</span>`;
+}
+
+function dailyLimitInfo(daily, index) {
+  const bar = daily?.bars?.[index];
+  if (!bar || index <= 0) return null;
+  return stockPriceLimitInfo(
+    Number(daily.bars[index - 1][4]),
+    daily.name,
+    { high: bar[2], low: bar[3], close: bar[4] },
+  );
+}
+
+function dailyLimitOverlay(limitInfos, closes) {
+  const events = [];
+  limitInfos.forEach((info, index) => {
+    if (info?.hitUp) events.push([index, closes[index], 1]);
+    if (info?.hitDown) events.push([index, closes[index], -1]);
+  });
+  return {
+    name: '涨跌停高亮',
+    type: 'custom',
+    coordinateSystem: 'cartesian2d',
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    data: events,
+    encode: { x: 0, y: 1 },
+    tooltip: { show: false },
+    silent: true,
+    clip: true,
+    z: 90,
+    renderItem: (params, api) => {
+      const center = api.coord([api.value(0), api.value(1)]);
+      const direction = Number(api.value(2));
+      const width = Math.max(5, Math.abs(api.size([1, 0])[0]) * .82);
+      const height = 5;
+      return {
+        type: 'rect',
+        shape: {
+          x: center[0] - width / 2,
+          y: direction > 0
+            ? params.coordSys.y + 2
+            : params.coordSys.y + params.coordSys.height - height - 2,
+          width,
+          height,
+        },
+        style: {
+          fill: direction > 0 ? '#ef6666' : '#3fc28b',
+        },
+      };
+    },
+  };
+}
+
 function marketChart() {
   if (!MARKET_CHART) {
     MARKET_CHART = echarts.init($('#stock-detail-chart'), null, {
@@ -386,6 +526,8 @@ function renderDailyMarket() {
   const ma20 = movingAverage(closes, 20);
   const { start, end } = stockDailyWindow(dates, row.day);
   const marks = dailyMarketMarks(daily);
+  const limitInfos = bars.map((_item, index) =>
+    dailyLimitInfo(daily, index));
   const chart = marketChart();
   chart.off('click');
   chart.setOption({
@@ -402,6 +544,7 @@ function renderDailyMarket() {
         const index = items[0]?.dataIndex;
         const item = bars[index];
         if (!item) return '暂无数据';
+        const limit = limitInfos[index];
         const averages = [
           ['MA5', ma5[index]],
           ['MA10', ma10[index]],
@@ -412,7 +555,14 @@ function renderDailyMarket() {
         return `${dayText(item[0])}<br>开 ${Number(item[1]).toFixed(2)}　收 ${Number(item[4]).toFixed(2)}`
           + `<br>高 ${Number(item[2]).toFixed(2)}　低 ${Number(item[3]).toFixed(2)}`
           + (averages ? `<br>${averages}` : '')
-          + `<br>成交额 ¥${money(item[5])}`;
+          + `<br>成交额 ¥${money(item[5])}`
+          + (
+            limit && !limit.unlimited
+              ? `<br><span style="color:#ef6666">涨停 ${limit.upper.toFixed(2)}</span>　`
+                + `<span style="color:#3fc28b">跌停 ${limit.lower.toFixed(2)}</span>`
+                + `<br>${stockLimitLabel(limit)}`
+              : ''
+          );
       },
     },
     axisPointer: {
@@ -518,6 +668,7 @@ function renderDailyMarket() {
           },
         })),
       },
+      dailyLimitOverlay(limitInfos, closes),
       dailyJumpOverlay(closes),
     ],
   }, true);
@@ -534,12 +685,73 @@ function renderDailyMarket() {
     `前复权日K ${dayText(bars[0][0])} 至 ${dayText(bars.at(-1)[0])}`
     + ` · 多空 ${formulaMarks.length} · 卖点 ${sellMarks.length}`
     + ' · 点击任意K线查看对应分时';
+  const selectedIndex = dates.indexOf(String(row.day));
+  renderStockLimitBand(
+    limitInfos[selectedIndex >= 0 ? selectedIndex : dates.length - 1],
+    dates[selectedIndex >= 0 ? selectedIndex : dates.length - 1],
+  );
+}
+
+function normalizedMinutePoints(minute) {
+  const points = [...(minute.points || [])];
+  if (!points.length) return points;
+  const firstClock = String(points[0][0]).padStart(4, '0');
+  if (firstClock > '0930') {
+    const opening = Number(points[0][1]);
+    points.unshift([
+      '0930',
+      opening,
+      opening,
+      opening,
+      opening,
+      0,
+      0,
+    ]);
+  }
+  return points;
+}
+
+function availableMinuteDates(state = MARKET_STATE) {
+  if (!state?.daily) return [];
+  const local = new Set();
+  for (const selection of state.daily.selections || []) {
+    local.add(compactDay(selection.day));
+    local.add(compactDay(selection.exit_day));
+  }
+  return [
+    ...new Set(
+      (state.daily.bars || [])
+        .map(item => compactDay(item[0]))
+        .filter(day => day.startsWith('2026') || local.has(day)),
+    ),
+  ].sort();
+}
+
+function renderMinuteNavigation(state = MARKET_STATE) {
+  const dates = availableMinuteDates(state);
+  const current = compactDay(state?.minute?.day || state?.row?.day);
+  $('#stock-minute-date').innerHTML = dates.map(day =>
+    `<option value="${day}">${dayText(day)}</option>`).join('');
+  $('#stock-minute-date').value = current;
+  const index = dates.indexOf(current);
+  $('#stock-minute-prev').disabled = index <= 0;
+  $('#stock-minute-next').disabled =
+    index < 0 || index >= dates.length - 1;
+}
+
+async function moveMinuteDate(offset) {
+  const dates = availableMinuteDates();
+  const current = compactDay(
+    MARKET_STATE?.minute?.day || MARKET_STATE?.row?.day);
+  const index = dates.indexOf(current);
+  const target = dates[index + offset];
+  if (target) await openMarketDate(target);
 }
 
 function minuteMarketMarks(minute) {
   const { row, daily } = MARKET_STATE;
   const day = compactDay(minute.day);
-  const points = minute.points || [];
+  const points = normalizedMinutePoints(minute);
   const clocks = points.map(item => String(item[0]).padStart(4, '0'));
   const previousClose = Number(minute.previous_close);
   const makeMark = (
@@ -720,7 +932,7 @@ async function openMarketDate(day) {
 
 function renderMinuteMarket() {
   const { minute, row } = MARKET_STATE;
-  const points = minute.points || [];
+  const points = normalizedMinutePoints(minute);
   const clocks = points.map(item => item[0]);
   const prices = points.map(item => Number(item[4]));
   const volumes = points.map(item => Number(item[5]));
@@ -740,13 +952,39 @@ function renderMinuteMarket() {
     ...prices.map(price => Math.abs(price - previousClose)),
   ) * 1.12;
   const markPoints = minuteMarketMarks(minute);
+  const finitePrices = prices.filter(Number.isFinite);
+  const limitInfo = stockPriceLimitInfo(
+    previousClose,
+    row.name,
+    {
+      high: finitePrices.length ? Math.max(...finitePrices) : null,
+      low: finitePrices.length ? Math.min(...finitePrices) : null,
+      close: finitePrices.at(-1),
+    },
+  );
+  renderStockLimitBand(limitInfo, minute.day);
+  const limitTolerance = .0051;
+  const limitUpPrices = prices.map(price => (
+    limitInfo && !limitInfo.unlimited
+    && price >= limitInfo.upper - limitTolerance
+      ? price : null
+  ));
+  const limitDownPrices = prices.map(price => (
+    limitInfo && !limitInfo.unlimited
+    && price <= limitInfo.lower + limitTolerance
+      ? price : null
+  ));
+  const legend = ['价格', '当日均价'];
+  if (limitInfo?.hitUp) legend.push('涨停区段');
+  if (limitInfo?.hitDown) legend.push('跌停区段');
+  legend.push('方向成交量');
   const chart = marketChart();
   chart.off('click');
   chart.setOption({
     animation: false,
     legend: {
       top: 2, right: 12,
-      data: ['价格', '当日均价', '方向成交量'],
+      data: legend,
       textStyle: { color: '#94a3a8' },
     },
     tooltip: {
@@ -776,7 +1014,7 @@ function renderMinuteMarket() {
         axisLabel: {
           color: '#94a3a8',
           interval: (_index, value) => (
-            ['0931', '1030', '1130', '1301', '1400', '1500']
+            ['0930', '1030', '1130', '1301', '1400', '1500']
               .includes(value)
           ),
           formatter: value => `${value.slice(0, 2)}:${value.slice(2)}`,
@@ -831,9 +1069,76 @@ function renderMinuteMarket() {
             color: '#e5b94f',
             formatter: '0.00%',
           },
-          data: [{ yAxis: previousClose }],
+          data: [
+            { yAxis: previousClose },
+            ...(
+              limitInfo && !limitInfo.unlimited
+                ? [{
+                  yAxis: limitInfo.upper,
+                  lineStyle: {
+                    type: 'dashed',
+                    color: '#ef6666',
+                    width: 1.2,
+                  },
+                  label: {
+                    show: true,
+                    position: 'insideEndTop',
+                    color: '#ef6666',
+                    formatter: `涨停 +${(limitInfo.rate * 100).toFixed(0)}%`,
+                  },
+                }, {
+                  yAxis: limitInfo.lower,
+                  lineStyle: {
+                    type: 'dashed',
+                    color: '#3fc28b',
+                    width: 1.2,
+                  },
+                  label: {
+                    show: true,
+                    position: 'insideEndBottom',
+                    color: '#3fc28b',
+                    formatter: `跌停 -${(limitInfo.rate * 100).toFixed(0)}%`,
+                  },
+                }]
+                : []
+            ),
+          ],
         },
       },
+      ...(
+        limitInfo?.hitUp
+          ? [{
+            name: '涨停区段',
+            type: 'line',
+            data: limitUpPrices,
+            showSymbol: true,
+            symbol: 'circle',
+            symbolSize: 5,
+            connectNulls: false,
+            lineStyle: { width: 5, color: '#ef6666' },
+            itemStyle: { color: '#ef6666' },
+            emphasis: { disabled: true },
+            z: 12,
+          }]
+          : []
+      ),
+      ...(
+        limitInfo?.hitDown
+          ? [{
+            name: '跌停区段',
+            type: 'line',
+            data: limitDownPrices,
+            showSymbol: true,
+            symbol: 'circle',
+            symbolSize: 5,
+            connectNulls: false,
+            lineStyle: { width: 5, color: '#3fc28b' },
+            itemStyle: { color: '#3fc28b' },
+            emphasis: { disabled: true },
+            z: 12,
+          }]
+          : []
+      ),
       {
         name: '当日均价',
         type: 'line',
@@ -858,8 +1163,12 @@ function renderMinuteMarket() {
   }, true);
   $('#stock-market-status').textContent =
     `${dayText(minute.day)} 前复权1分钟 · 昨收 ${previousClose.toFixed(2)}`
-    + ` · ${points.length} 根 · `
+    + ` · ${points.length} 点（含09:30开盘）`
+    + (limitInfo && (limitInfo.hitUp || limitInfo.hitDown)
+      ? ` · ${stockLimitLabel(limitInfo)}` : '')
+    + ' · '
     + markPoints.map(mark => mark.name).join(' · ');
+  renderMinuteNavigation();
 }
 
 function setMarketView(view) {
@@ -870,6 +1179,7 @@ function setMarketView(view) {
   $('#stock-minute-tab').classList.toggle('active', !daily);
   $('#stock-daily-tab').setAttribute('aria-selected', String(daily));
   $('#stock-minute-tab').setAttribute('aria-selected', String(!daily));
+  $('#stock-minute-nav').hidden = daily;
   if (daily) {
     if (MARKET_STATE.daily) renderDailyMarket();
   } else if (MARKET_STATE.minute) {
@@ -897,6 +1207,8 @@ async function openCandidateMarket(row, initialView = 'daily') {
   $('#detail-return').textContent = pct(row.net_return);
   $('#detail-return').className = tone(row.net_return);
   $('#stock-market-status').textContent = '正在读取日K与分时';
+  $('#stock-minute-nav').hidden = true;
+  $('#stock-minute-date').innerHTML = '';
   $('#stock-dialog').showModal();
   marketChart().clear();
   setMarketView(initialView);
@@ -1013,7 +1325,15 @@ function bind() {
   $('#stock-dialog').addEventListener('close', () => {
     MARKET_STATE = null;
     MARKET_CHART?.clear();
+    $('#stock-minute-nav').hidden = true;
+    $('#stock-limit-band').hidden = true;
   });
+  $('#stock-minute-prev').addEventListener(
+    'click', () => moveMinuteDate(-1));
+  $('#stock-minute-next').addEventListener(
+    'click', () => moveMinuteDate(1));
+  $('#stock-minute-date').addEventListener(
+    'change', event => openMarketDate(event.target.value));
   $('#refresh').addEventListener('click', () => location.reload());
   window.addEventListener('resize', () => MARKET_CHART?.resize());
 }
