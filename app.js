@@ -430,6 +430,7 @@ function dailyMarketMarks(daily) {
   const dates = bars.map(item => compactDay(item[0]));
   const makeMark = (
     day, direction, strength, kind, price, probability = null,
+    clockValue = '',
   ) => {
     const index = dates.indexOf(compactDay(day));
     if (index < 0) return null;
@@ -452,6 +453,9 @@ function dailyMarketMarks(daily) {
     const markerPrice = Number.isFinite(Number(price))
       ? Number(price)
       : long ? Number(bars[index][3]) : Number(bars[index][2]);
+    const clock = String(clockValue || '').padStart(4, '0');
+    const probabilityText = Number.isFinite(Number(probability))
+      ? `<br>概率 ${(Number(probability) * 100).toFixed(1)}%` : '';
     return {
       name: label,
       kind,
@@ -463,32 +467,43 @@ function dailyMarketMarks(daily) {
       symbol: execution
         ? (simulatedSell ? 'triangle' : 'diamond')
         : 'circle',
-      symbolSize: execution ? 30 : 36,
+      symbolSize: execution ? 18 : strength === 'weak' ? 7 : 10,
       symbolOffset: [
         0,
         execution
-          ? (long ? '-82%' : '82%')
-          : long ? '72%' : '-72%',
+          ? (long ? '-55%' : '55%')
+          : 0,
       ],
       itemStyle: {
         color,
         borderColor: '#101619',
-        borderWidth: 3,
+        borderWidth: execution ? 2 : 1,
       },
       label: {
-        show: true,
+        show: execution,
         color: '#fff',
-        fontSize: 12,
-        lineHeight: 16,
+        position: long ? 'top' : 'bottom',
+        distance: 10,
+        padding: [2, 4],
+        backgroundColor: 'rgba(13,17,20,.92)',
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 3,
+        fontSize: 9,
         fontWeight: 700,
         formatter: label,
+      },
+      tooltip: {
+        formatter: `${label}${clockValue ? ` ${clock.slice(0, 2)}:${clock.slice(2)}` : ''}`
+          + `<br>${dayText(day)} · ¥${markerPrice.toFixed(2)}`
+          + probabilityText,
       },
     };
   };
   const marks = (daily.signal_marks || []).map(item =>
     makeMark(
       item[0], item[2], item[3],
-      'formula_signal', item[5], item[4],
+      'formula_signal', item[5], item[4], item[1],
     )).filter(Boolean);
   const exitKeys = new Set();
   for (const selection of daily.selections || []) {
@@ -498,6 +513,8 @@ function dailyMarketMarks(daily) {
       'strong',
       'strategy_buy',
       selection.entry_price,
+      null,
+      selection.entry_clock,
     );
     if (buy) marks.push(buy);
     const key = `${compactDay(selection.exit_day)}/${selection.exit_clock}`;
@@ -509,6 +526,8 @@ function dailyMarketMarks(daily) {
       selection.candidate_status === 'primary_trade'
         ? 'strategy_sell' : 'simulated_sell',
       selection.exit_price,
+      null,
+      selection.exit_clock,
     );
     if (sell) marks.push(sell);
     exitKeys.add(key);
