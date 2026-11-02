@@ -159,91 +159,184 @@ function axisLabelDay(value) {
   return day === '--' ? day : day.slice(5);
 }
 
+function axisBase() {
+  return {
+    axisLine: { lineStyle: { color: '#344149' } },
+    axisLabel: { color: '#94a3a8' },
+    splitLine: { lineStyle: { color: '#253036' } },
+  };
+}
+
+function movingAverage(values, period) {
+  let sum = 0;
+  return values.map((value, index) => {
+    sum += Number(value);
+    if (index >= period) sum -= Number(values[index - period]);
+    return index >= period - 1
+      ? Number((sum / period).toFixed(4))
+      : null;
+  });
+}
+
+function stockDailyWindow(dates, selectedDate, visibleBars = 80) {
+  const selectedIndex = dates.indexOf(String(selectedDate));
+  const startIndex = selectedIndex >= 0
+    ? Math.max(
+      0,
+      Math.min(
+        selectedIndex - Math.floor(visibleBars / 2),
+        Math.max(0, dates.length - visibleBars),
+      ),
+    )
+    : Math.max(0, dates.length - visibleBars);
+  const endIndex = Math.min(
+    dates.length - 1, startIndex + visibleBars - 1);
+  return {
+    start: dates.length ? startIndex / dates.length * 100 : 0,
+    end: dates.length ? (endIndex + 1) / dates.length * 100 : 100,
+  };
+}
+
+function minuteVolumeDirections(prices, previousClose) {
+  let reference = Number(previousClose);
+  return prices.map(value => {
+    const current = Number(value);
+    const direction = current > reference
+      ? 1 : current < reference ? -1 : 0;
+    reference = current;
+    return direction;
+  });
+}
+
+function minuteVolumeColor(direction) {
+  return direction > 0
+    ? 'rgba(239,102,102,.72)'
+    : direction < 0
+      ? 'rgba(63,194,139,.72)'
+      : 'rgba(148,163,168,.48)';
+}
+
+function minuteVolumeLabel(direction) {
+  return direction > 0
+    ? '上涨成交量' : direction < 0 ? '下跌成交量' : '平盘成交量';
+}
+
 function renderDailyMarket() {
   const { daily, row } = MARKET_STATE;
   const bars = daily.bars || [];
   const dates = bars.map(item => item[0]);
-  const signalIndex = Math.max(0, dates.indexOf(String(row.day)));
-  const startIndex = Math.max(0, signalIndex - 55);
-  const endIndex = Math.min(dates.length - 1, signalIndex + 25);
-  const zoomStart = dates.length > 1
-    ? startIndex / (dates.length - 1) * 100 : 0;
-  const zoomEnd = dates.length > 1
-    ? endIndex / (dates.length - 1) * 100 : 100;
-  const volume = bars.map(item => ({
-    value: item[5],
-    itemStyle: {
-      color: item[4] >= item[1] ? '#ef5b67' : '#39b980',
-    },
-  }));
-  marketChart().setOption({
+  const closes = bars.map(item => Number(item[4]));
+  const ma5 = movingAverage(closes, 5);
+  const ma10 = movingAverage(closes, 10);
+  const ma20 = movingAverage(closes, 20);
+  const { start, end } = stockDailyWindow(dates, row.day);
+  const marks = (daily.selections || []).map(selection => {
+    const index = dates.indexOf(String(selection.day));
+    if (index < 0) return null;
+    const selected = String(selection.day) === String(row.day);
+    return {
+      name: selected ? '买点' : '选股',
+      coord: [index, Number(bars[index][3])],
+      value: selected ? '买点' : '选股',
+      symbol: selected ? 'diamond' : 'circle',
+      symbolSize: selected ? 30 : 26,
+      symbolOffset: [0, '72%'],
+      itemStyle: {
+        color: selected ? '#ef6666' : '#e5b94f',
+        borderColor: '#101619',
+        borderWidth: 3,
+      },
+      label: {
+        show: true,
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: 700,
+        formatter: selected ? '买点' : '选股',
+      },
+    };
+  }).filter(Boolean);
+  const chart = marketChart();
+  chart.off('click');
+  chart.setOption({
     animation: false,
-    backgroundColor: 'transparent',
     legend: {
-      top: 2,
-      right: 8,
-      textStyle: { color: '#8f9ba1' },
-      data: ['日K', '成交额'],
+      top: 2, right: 12,
+      data: ['MA5', 'MA10', 'MA20'],
+      textStyle: { color: '#94a3a8' },
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      backgroundColor: '#141b1f',
-      borderColor: '#445158',
-      textStyle: { color: '#eef2f3' },
+      confine: true,
+      formatter: items => {
+        const index = items[0]?.dataIndex;
+        const item = bars[index];
+        if (!item) return '暂无数据';
+        const averages = [
+          ['MA5', ma5[index]],
+          ['MA10', ma10[index]],
+          ['MA20', ma20[index]],
+        ].filter(value => value[1] != null)
+          .map(value => `${value[0]} ${Number(value[1]).toFixed(2)}`)
+          .join('　');
+        return `${dayText(item[0])}<br>开 ${Number(item[1]).toFixed(2)}　收 ${Number(item[4]).toFixed(2)}`
+          + `<br>高 ${Number(item[2]).toFixed(2)}　低 ${Number(item[3]).toFixed(2)}`
+          + (averages ? `<br>${averages}` : '')
+          + `<br>成交额 ¥${money(item[5])}`;
+      },
     },
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    axisPointer: {
+      link: [{ xAxisIndex: 'all' }],
+      lineStyle: { color: '#55c5c7' },
+    },
     grid: [
-      { left: 58, right: 22, top: 34, height: '58%' },
-      { left: 58, right: 22, top: '72%', height: '14%' },
+      { left: 58, right: 18, top: 42, height: '58%' },
+      { left: 58, right: 18, top: '75%', height: '11%' },
     ],
     xAxis: [
       {
-        type: 'category',
-        data: dates,
+        ...axisBase(),
+        type: 'category', data: dates,
         boundaryGap: true,
-        axisLine: { lineStyle: { color: '#445158' } },
-        axisLabel: { color: '#8f9ba1', formatter: axisLabelDay },
-        splitLine: { show: false },
+        axisLabel: { show: false },
       },
       {
+        ...axisBase(),
         type: 'category',
         gridIndex: 1,
         data: dates,
         boundaryGap: true,
-        axisLabel: { show: false },
-        axisLine: { lineStyle: { color: '#445158' } },
+        axisLabel: {
+          color: '#94a3a8',
+          hideOverlap: true,
+          formatter: axisLabelDay,
+        },
       },
     ],
     yAxis: [
       {
-        scale: true,
-        splitLine: { lineStyle: { color: '#293237' } },
-        axisLabel: { color: '#8f9ba1' },
+        ...axisBase(),
+        type: 'value', scale: true,
+        axisLabel: { formatter: value => Number(value).toFixed(2) },
       },
       {
-        scale: true,
+        ...axisBase(),
+        type: 'value', scale: true,
         gridIndex: 1,
-        splitNumber: 2,
-        splitLine: { show: false },
         axisLabel: {
-          color: '#8f9ba1',
           formatter: value => `${(value / 1e8).toFixed(1)}亿`,
         },
       },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: zoomStart, end: zoomEnd },
+      { type: 'inside', xAxisIndex: [0, 1], start, end },
       {
         type: 'slider',
         xAxisIndex: [0, 1],
-        bottom: 4,
-        height: 22,
-        start: zoomStart,
-        end: zoomEnd,
-        borderColor: '#364148',
-        fillerColor: 'rgba(76,181,190,.18)',
-        textStyle: { color: '#8f9ba1' },
+        height: 18, bottom: 2, start, end,
+        borderColor: '#344149',
+        backgroundColor: '#101619',
+        fillerColor: 'rgba(85,197,199,.12)',
+        textStyle: { color: '#94a3a8' },
       },
     ],
     series: [
@@ -258,129 +351,248 @@ function renderDailyMarket() {
           borderColor0: '#39b980',
         },
         markLine: {
-          symbol: ['none', 'none'],
-          label: {
-            formatter: '入选',
-            color: '#f0c96a',
-          },
-          lineStyle: { color: '#f0c96a', type: 'dashed' },
+          symbol: 'none',
+          lineStyle: { color: '#e5b94f', type: 'dashed' },
+          label: { color: '#e5b94f', formatter: '入选日' },
           data: [{ xAxis: String(row.day) }],
         },
+        markPoint: { silent: true, data: marks },
+      },
+      {
+        name: 'MA5', type: 'line', data: ma5,
+        showSymbol: false,
+        lineStyle: { width: 1.4, color: '#e5b94f' },
+      },
+      {
+        name: 'MA10', type: 'line', data: ma10,
+        showSymbol: false,
+        lineStyle: { width: 1.4, color: '#55c5c7' },
+      },
+      {
+        name: 'MA20', type: 'line', data: ma20,
+        showSymbol: false,
+        lineStyle: { width: 1.4, color: '#c084fc' },
       },
       {
         name: '成交额',
         type: 'bar',
         xAxisIndex: 1,
         yAxisIndex: 1,
-        data: volume,
-        barCategoryGap: '18%',
+        data: bars.map(item => ({
+          value: Number(item[5]),
+          itemStyle: {
+            color: Number(item[4]) >= Number(item[1])
+              ? 'rgba(239,102,102,.55)'
+              : 'rgba(63,194,139,.55)',
+          },
+        })),
       },
     ],
   }, true);
+  chart.on('click', params => {
+    const index = Number(params?.dataIndex);
+    const day = dates[index];
+    const selection = (daily.selections || []).find(
+      item => String(item.day) === String(day));
+    if (!selection) return;
+    const selectedRow = DATA.candidate_rows.find(item =>
+      item.code === row.code && String(item.day) === String(day));
+    if (selectedRow) openCandidateMarket(selectedRow, 'minute');
+  });
   $('#stock-market-status').textContent =
-    `${bars.length} 个交易日 · 黄线为入选日`;
+    `前复权日K ${dayText(bars[0][0])} 至 ${dayText(bars.at(-1)[0])}`
+    + ` · ${bars.length} 个交易日 · MA5/MA10/MA20 · 点击入选K线查看分时`;
 }
 
 function renderMinuteMarket() {
   const { minute, row } = MARKET_STATE;
   const points = minute.points || [];
   const clocks = points.map(item => item[0]);
-  const close = points.map(item => item[4]);
-  const volume = points.map(item => ({
-    value: item[6],
-    itemStyle: {
-      color: item[4] >= item[1] ? '#ef5b67' : '#39b980',
+  const prices = points.map(item => Number(item[4]));
+  const volumes = points.map(item => Number(item[5]));
+  const amounts = points.map(item => Number(item[6]));
+  const previousClose = Number(minute.previous_close);
+  const directions = minuteVolumeDirections(prices, previousClose);
+  let cumulativeVolume = 0;
+  let cumulativeAmount = 0;
+  const averages = points.map((_item, index) => {
+    cumulativeVolume += Math.max(0, volumes[index]);
+    cumulativeAmount += Math.max(0, amounts[index]);
+    return cumulativeVolume > 0
+      ? cumulativeAmount / cumulativeVolume : null;
+  });
+  const span = Math.max(
+    previousClose * .003,
+    ...prices.map(price => Math.abs(price - previousClose)),
+  ) * 1.12;
+  const confirmationClock = '0936';
+  const entryClock = String(row.entry_clock).padStart(4, '0');
+  const markPoints = [
+    {
+      name: '确认',
+      clock: confirmationClock,
+      price: prices[clocks.indexOf(confirmationClock)],
+      color: '#e5b94f',
+      symbol: 'circle',
     },
-  }));
-  marketChart().setOption({
+    {
+      name: '买点',
+      clock: entryClock,
+      price: Number(row.entry_price),
+      color: '#ef6666',
+      symbol: 'diamond',
+    },
+  ].map(mark => {
+    const index = clocks.indexOf(mark.clock);
+    if (index < 0 || !Number.isFinite(mark.price)) return null;
+    const change = (mark.price / previousClose - 1) * 100;
+    return {
+      name: mark.name,
+      coord: [index, mark.price],
+      value: mark.name,
+      symbol: mark.symbol,
+      symbolSize: mark.name === '买点' ? 22 : 18,
+      symbolOffset: [0, '-55%'],
+      itemStyle: {
+        color: mark.color,
+        borderColor: '#101619',
+        borderWidth: 2,
+      },
+      label: {
+        show: true,
+        position: 'top',
+        distance: 18,
+        color: mark.color,
+        backgroundColor: 'rgba(13,17,20,.92)',
+        borderColor: mark.color,
+        borderWidth: 1,
+        borderRadius: 3,
+        padding: [3, 5],
+        fontWeight: 700,
+        formatter: `${mark.name} ${mark.clock.slice(0, 2)}:${mark.clock.slice(2)}\n`
+          + `¥${mark.price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
+      },
+    };
+  }).filter(Boolean);
+  const chart = marketChart();
+  chart.off('click');
+  chart.setOption({
     animation: false,
-    backgroundColor: 'transparent',
+    legend: {
+      top: 2, right: 12,
+      data: ['价格', '当日均价', '方向成交量'],
+      textStyle: { color: '#94a3a8' },
+    },
     tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      backgroundColor: '#141b1f',
-      borderColor: '#445158',
-      textStyle: { color: '#eef2f3' },
+      trigger: 'axis', confine: true,
+      formatter: items => {
+        const index = items[0]?.dataIndex;
+        if (index == null) return '';
+        const change = (prices[index] / previousClose - 1) * 100;
+        return `${dayText(minute.day)} ${clocks[index].slice(0, 2)}:${clocks[index].slice(2)}`
+          + `<br>价格 ${prices[index].toFixed(2)}`
+          + `<br>涨跌幅 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
+          + `<br>当日均价 ${averages[index]?.toFixed(2) || '--'}`
+          + `<br>${minuteVolumeLabel(directions[index])} ${volumes[index].toLocaleString('zh-CN')} 股`;
+      },
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: 58, right: 22, top: 30, height: '60%' },
-      { left: 58, right: 22, top: '74%', height: '16%' },
+      { left: 58, right: 18, top: 82, height: '44%' },
+      { left: 58, right: 18, top: '69%', height: '20%' },
     ],
     xAxis: [
       {
+        ...axisBase(),
         type: 'category',
         data: clocks,
         boundaryGap: false,
         axisLabel: {
-          color: '#8f9ba1',
-          interval: 29,
+          color: '#94a3a8',
+          interval: (_index, value) => (
+            ['0931', '1030', '1130', '1301', '1400', '1500']
+              .includes(value)
+          ),
           formatter: value => `${value.slice(0, 2)}:${value.slice(2)}`,
         },
-        axisLine: { lineStyle: { color: '#445158' } },
       },
       {
+        ...axisBase(),
         type: 'category',
         gridIndex: 1,
         data: clocks,
+        boundaryGap: true,
         axisLabel: { show: false },
-        axisLine: { lineStyle: { color: '#445158' } },
       },
     ],
     yAxis: [
       {
-        scale: true,
-        splitLine: { lineStyle: { color: '#293237' } },
-        axisLabel: { color: '#8f9ba1' },
+        ...axisBase(),
+        type: 'value',
+        min: Math.max(.01, previousClose - span),
+        max: previousClose + span,
+        axisLabel: {
+          formatter: value => {
+            const change = (Number(value) / previousClose - 1) * 100;
+            return `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+          },
+        },
       },
       {
-        scale: true,
+        ...axisBase(),
+        type: 'value',
         gridIndex: 1,
-        splitNumber: 2,
-        splitLine: { show: false },
-        axisLabel: {
-          color: '#8f9ba1',
-          formatter: value => `${(value / 1e4).toFixed(0)}万`,
-        },
+        axisLabel: { show: false },
       },
     ],
     series: [
       {
         name: '价格',
         type: 'line',
-        data: close,
+        data: prices,
         showSymbol: false,
-        lineStyle: { color: '#67c9d0', width: 2 },
-        areaStyle: { color: 'rgba(103,201,208,.10)' },
+        lineStyle: { width: 2, color: '#78a8e8' },
+        itemStyle: { color: '#78a8e8' },
+        areaStyle: { color: 'rgba(120,168,232,.08)' },
+        markPoint: { data: markPoints },
         markLine: {
-          symbol: ['none', 'none'],
-          label: { color: '#dce4e7' },
-          data: [
-            {
-              xAxis: '0936',
-              name: '确认',
-              lineStyle: { color: '#f0c96a', type: 'dashed' },
-            },
-            {
-              xAxis: String(row.entry_clock).padStart(4, '0'),
-              name: '入场',
-              lineStyle: { color: '#ef5b67', type: 'dashed' },
-            },
-          ],
+          silent: true,
+          symbol: 'none',
+          lineStyle: { type: 'dashed', color: '#e5b94f' },
+          label: {
+            show: true,
+            position: 'start',
+            color: '#e5b94f',
+            formatter: '0.00%',
+          },
+          data: [{ yAxis: previousClose }],
         },
       },
       {
-        name: '成交额',
+        name: '当日均价',
+        type: 'line',
+        data: averages,
+        showSymbol: false,
+        lineStyle: { width: 1.3, color: '#e5b94f' },
+        itemStyle: { color: '#e5b94f' },
+      },
+      {
+        name: '方向成交量',
         type: 'bar',
         xAxisIndex: 1,
         yAxisIndex: 1,
-        data: volume,
-        barCategoryGap: '8%',
+        barCategoryGap: '5%',
+        barMinHeight: 1,
+        data: volumes.map((value, index) => ({
+          value,
+          itemStyle: { color: minuteVolumeColor(directions[index]) },
+        })),
       },
     ],
   }, true);
   $('#stock-market-status').textContent =
-    `${dayText(minute.day)} · ${points.length} 根真实1分钟`;
+    `${dayText(minute.day)} 前复权1分钟 · 昨收 ${previousClose.toFixed(2)}`
+    + ` · ${points.length} 根 · 黄=确认 · 红=买点`;
 }
 
 function setMarketView(view) {
@@ -399,13 +611,13 @@ function setMarketView(view) {
   requestAnimationFrame(() => marketChart().resize());
 }
 
-async function openCandidateMarket(row) {
+async function openCandidateMarket(row, initialView = 'daily') {
   const day = String(row.day);
   MARKET_STATE = {
     row,
     daily: null,
     minute: null,
-    view: 'daily',
+    view: initialView,
   };
   $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
   $('#stock-dialog-meta').textContent =
@@ -420,7 +632,7 @@ async function openCandidateMarket(row) {
   $('#stock-market-status').textContent = '正在读取日K与分时';
   $('#stock-dialog').showModal();
   marketChart().clear();
-  setMarketView('daily');
+  setMarketView(initialView);
   const state = MARKET_STATE;
   try {
     const [daily, minute] = await Promise.all([
