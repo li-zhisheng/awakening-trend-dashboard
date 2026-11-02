@@ -557,6 +557,7 @@ function minuteMarketMarks(minute) {
     const execution = [
       'strategy_buy', 'strategy_sell', 'simulated_sell',
     ].includes(kind);
+    const labelled = execution || kind === 'confirmation';
     const markerPrice = Number.isFinite(Number(price))
       ? Number(price) : Number(points[index][4]);
     const label = name || (
@@ -579,32 +580,39 @@ function minuteMarketMarks(minute) {
       symbol: execution
         ? (simulatedSell ? 'triangle' : 'diamond')
         : 'circle',
-      symbolSize: execution ? 20 : strength === 'weak' ? 12 : 16,
+      symbolSize: execution
+        ? 14 : kind === 'confirmation' ? 10
+          : strength === 'weak' ? 6 : 8,
       symbolOffset: [
         0,
         execution
-          ? (long ? '55%' : '-55%')
-          : long ? '-55%' : '55%',
+          ? (long ? '-35%' : '35%')
+          : kind === 'confirmation' ? '35%' : 0,
       ],
       itemStyle: {
         color,
         borderColor: '#101619',
-        borderWidth: execution ? 2 : 1,
+        borderWidth: 1,
       },
       label: {
-        show: true,
-        position: long ? 'top' : 'bottom',
-        distance: execution ? 22 : 16,
+        show: labelled,
+        position: kind === 'confirmation'
+          ? 'bottom' : long ? 'top' : 'bottom',
+        distance: 10,
         color,
         backgroundColor: 'rgba(13,17,20,.92)',
         borderColor: color,
         borderWidth: 1,
         borderRadius: 3,
-        padding: [3, 5],
-        fontSize: strength === 'weak' ? 9 : 10,
+        padding: [2, 4],
+        fontSize: 9,
         fontWeight: 700,
-        formatter: `${label} ${clock.slice(0, 2)}:${clock.slice(2)}\n`
-          + `¥${markerPrice.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
+        formatter: `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`,
+      },
+      tooltip: {
+        formatter: `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`
+          + `<br>¥${markerPrice.toFixed(2)}`
+          + `<br>${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
       },
     };
   };
@@ -952,8 +960,11 @@ function renderCandidates() {
       <td>${row.candidate_rank}/${row.basket_size}</td>
       <td><span class="badge ${row.candidate_status}">${statusLabels[row.candidate_status] || row.candidate_status}</span></td>
       <td class="${tone(row.confirmation_return)}">${pct(row.confirmation_return)}</td>
-      <td>¥${Number(row.entry_price).toFixed(2)}</td>
-      <td>${row.exit_day} ${String(row.exit_clock).padStart(4, '0')}</td>
+      <td class="candidate-entry ${tone(row.entry_return)}">
+        <strong>${pct(row.entry_return)}</strong>
+        <small>¥${Number(row.entry_price).toFixed(2)}</small>
+      </td>
+      <td>${dayText(row.exit_day)} ${String(row.exit_clock).padStart(4, '0')}</td>
       <td>${row.hold_days}日</td><td class="${tone(row.net_return)}">${pct(row.net_return)}</td></tr>`).join('')}</tbody>`;
   $('#candidate-table').querySelectorAll('.candidate-stock').forEach(
     button => button.addEventListener('click', () => {
