@@ -6,14 +6,18 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势追涨 · 主策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261102-capital">
-  <script src="app.js?v=20261102-capital" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261102-market">
+  <script src="echarts.min.js"></script>
+  <script src="app.js?v=20261102-market" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <div>
-      <div class="eyebrow">AWAKENING / PRIMARY STRATEGY</div>
-      <h1>强势追涨</h1>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">强</span>
+      <div>
+        <div class="eyebrow">AWAKENING / PRIMARY STRATEGY</div>
+        <h1>强势追涨</h1>
+      </div>
     </div>
     <div class="header-status">
       <span id="strategy-state" class="status">读取中</span>
@@ -107,5 +111,32 @@
       </section>
     </section>
   </main>
+
+  <dialog id="stock-dialog">
+    <div class="dialog-head">
+      <div>
+        <h2 id="stock-dialog-title">候选详情</h2>
+        <p id="stock-dialog-meta">--</p>
+      </div>
+      <button id="stock-dialog-close" type="button"
+              title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div class="market-toolbar">
+      <div class="segmented" role="tablist" aria-label="行情周期">
+        <button id="stock-daily-tab" class="active" type="button"
+                role="tab" aria-selected="true">日K</button>
+        <button id="stock-minute-tab" type="button"
+                role="tab" aria-selected="false">分时</button>
+      </div>
+      <span id="stock-market-status">读取中</span>
+    </div>
+    <div id="stock-detail-chart" class="stock-market-chart"></div>
+    <div class="detail-strip">
+      <div><span>信号日</span><strong id="detail-signal-day">--</strong></div>
+      <div><span>09:37入场</span><strong id="detail-entry">--</strong></div>
+      <div><span>退出</span><strong id="detail-exit">--</strong></div>
+      <div><span>净收益</span><strong id="detail-return">--</strong></div>
+    </div>
+  </dialog>
 </body>
 </html>

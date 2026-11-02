@@ -1,6 +1,8 @@
 'use strict';
 
 let DATA = null;
+let MARKET_STATE = null;
+let MARKET_CHART = null;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
 
 const $ = (selector) => document.querySelector(selector);
@@ -135,6 +137,311 @@ function renderAccount() {
   ].map(([key, value]) => `<div><span>${key}</span><code title="${value}">${shortHash(value)}</code></div>`).join('');
 }
 
+async function loadMarketAsset(path) {
+  const response = await fetch(`${path}?v=${DATA.integrity.result_sha256}`, {
+    cache: 'force-cache',
+  });
+  if (!response.ok) throw new Error(`行情数据 HTTP ${response.status}`);
+  return response.json();
+}
+
+function marketChart() {
+  if (!MARKET_CHART) {
+    MARKET_CHART = echarts.init($('#stock-detail-chart'), null, {
+      renderer: 'canvas',
+    });
+  }
+  return MARKET_CHART;
+}
+
+function axisLabelDay(value) {
+  const day = dayText(value);
+  return day === '--' ? day : day.slice(5);
+}
+
+function renderDailyMarket() {
+  const { daily, row } = MARKET_STATE;
+  const bars = daily.bars || [];
+  const dates = bars.map(item => item[0]);
+  const signalIndex = Math.max(0, dates.indexOf(String(row.day)));
+  const startIndex = Math.max(0, signalIndex - 55);
+  const endIndex = Math.min(dates.length - 1, signalIndex + 25);
+  const zoomStart = dates.length > 1
+    ? startIndex / (dates.length - 1) * 100 : 0;
+  const zoomEnd = dates.length > 1
+    ? endIndex / (dates.length - 1) * 100 : 100;
+  const volume = bars.map(item => ({
+    value: item[5],
+    itemStyle: {
+      color: item[4] >= item[1] ? '#ef5b67' : '#39b980',
+    },
+  }));
+  marketChart().setOption({
+    animation: false,
+    backgroundColor: 'transparent',
+    legend: {
+      top: 2,
+      right: 8,
+      textStyle: { color: '#8f9ba1' },
+      data: ['日K', '成交额'],
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      backgroundColor: '#141b1f',
+      borderColor: '#445158',
+      textStyle: { color: '#eef2f3' },
+    },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    grid: [
+      { left: 58, right: 22, top: 34, height: '58%' },
+      { left: 58, right: 22, top: '72%', height: '14%' },
+    ],
+    xAxis: [
+      {
+        type: 'category',
+        data: dates,
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: '#445158' } },
+        axisLabel: { color: '#8f9ba1', formatter: axisLabelDay },
+        splitLine: { show: false },
+      },
+      {
+        type: 'category',
+        gridIndex: 1,
+        data: dates,
+        boundaryGap: true,
+        axisLabel: { show: false },
+        axisLine: { lineStyle: { color: '#445158' } },
+      },
+    ],
+    yAxis: [
+      {
+        scale: true,
+        splitLine: { lineStyle: { color: '#293237' } },
+        axisLabel: { color: '#8f9ba1' },
+      },
+      {
+        scale: true,
+        gridIndex: 1,
+        splitNumber: 2,
+        splitLine: { show: false },
+        axisLabel: {
+          color: '#8f9ba1',
+          formatter: value => `${(value / 1e8).toFixed(1)}亿`,
+        },
+      },
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1], start: zoomStart, end: zoomEnd },
+      {
+        type: 'slider',
+        xAxisIndex: [0, 1],
+        bottom: 4,
+        height: 22,
+        start: zoomStart,
+        end: zoomEnd,
+        borderColor: '#364148',
+        fillerColor: 'rgba(76,181,190,.18)',
+        textStyle: { color: '#8f9ba1' },
+      },
+    ],
+    series: [
+      {
+        name: '日K',
+        type: 'candlestick',
+        data: bars.map(item => [item[1], item[4], item[3], item[2]]),
+        itemStyle: {
+          color: '#ef5b67',
+          color0: '#39b980',
+          borderColor: '#ef5b67',
+          borderColor0: '#39b980',
+        },
+        markLine: {
+          symbol: ['none', 'none'],
+          label: {
+            formatter: '入选',
+            color: '#f0c96a',
+          },
+          lineStyle: { color: '#f0c96a', type: 'dashed' },
+          data: [{ xAxis: String(row.day) }],
+        },
+      },
+      {
+        name: '成交额',
+        type: 'bar',
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: volume,
+        barCategoryGap: '18%',
+      },
+    ],
+  }, true);
+  $('#stock-market-status').textContent =
+    `${bars.length} 个交易日 · 黄线为入选日`;
+}
+
+function renderMinuteMarket() {
+  const { minute, row } = MARKET_STATE;
+  const points = minute.points || [];
+  const clocks = points.map(item => item[0]);
+  const close = points.map(item => item[4]);
+  const volume = points.map(item => ({
+    value: item[6],
+    itemStyle: {
+      color: item[4] >= item[1] ? '#ef5b67' : '#39b980',
+    },
+  }));
+  marketChart().setOption({
+    animation: false,
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      backgroundColor: '#141b1f',
+      borderColor: '#445158',
+      textStyle: { color: '#eef2f3' },
+    },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    grid: [
+      { left: 58, right: 22, top: 30, height: '60%' },
+      { left: 58, right: 22, top: '74%', height: '16%' },
+    ],
+    xAxis: [
+      {
+        type: 'category',
+        data: clocks,
+        boundaryGap: false,
+        axisLabel: {
+          color: '#8f9ba1',
+          interval: 29,
+          formatter: value => `${value.slice(0, 2)}:${value.slice(2)}`,
+        },
+        axisLine: { lineStyle: { color: '#445158' } },
+      },
+      {
+        type: 'category',
+        gridIndex: 1,
+        data: clocks,
+        axisLabel: { show: false },
+        axisLine: { lineStyle: { color: '#445158' } },
+      },
+    ],
+    yAxis: [
+      {
+        scale: true,
+        splitLine: { lineStyle: { color: '#293237' } },
+        axisLabel: { color: '#8f9ba1' },
+      },
+      {
+        scale: true,
+        gridIndex: 1,
+        splitNumber: 2,
+        splitLine: { show: false },
+        axisLabel: {
+          color: '#8f9ba1',
+          formatter: value => `${(value / 1e4).toFixed(0)}万`,
+        },
+      },
+    ],
+    series: [
+      {
+        name: '价格',
+        type: 'line',
+        data: close,
+        showSymbol: false,
+        lineStyle: { color: '#67c9d0', width: 2 },
+        areaStyle: { color: 'rgba(103,201,208,.10)' },
+        markLine: {
+          symbol: ['none', 'none'],
+          label: { color: '#dce4e7' },
+          data: [
+            {
+              xAxis: '0936',
+              name: '确认',
+              lineStyle: { color: '#f0c96a', type: 'dashed' },
+            },
+            {
+              xAxis: String(row.entry_clock).padStart(4, '0'),
+              name: '入场',
+              lineStyle: { color: '#ef5b67', type: 'dashed' },
+            },
+          ],
+        },
+      },
+      {
+        name: '成交额',
+        type: 'bar',
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: volume,
+        barCategoryGap: '8%',
+      },
+    ],
+  }, true);
+  $('#stock-market-status').textContent =
+    `${dayText(minute.day)} · ${points.length} 根真实1分钟`;
+}
+
+function setMarketView(view) {
+  if (!MARKET_STATE) return;
+  MARKET_STATE.view = view;
+  const daily = view === 'daily';
+  $('#stock-daily-tab').classList.toggle('active', daily);
+  $('#stock-minute-tab').classList.toggle('active', !daily);
+  $('#stock-daily-tab').setAttribute('aria-selected', String(daily));
+  $('#stock-minute-tab').setAttribute('aria-selected', String(!daily));
+  if (daily) {
+    if (MARKET_STATE.daily) renderDailyMarket();
+  } else if (MARKET_STATE.minute) {
+    renderMinuteMarket();
+  }
+  requestAnimationFrame(() => marketChart().resize());
+}
+
+async function openCandidateMarket(row) {
+  const day = String(row.day);
+  MARKET_STATE = {
+    row,
+    daily: null,
+    minute: null,
+    view: 'daily',
+  };
+  $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
+  $('#stock-dialog-meta').textContent =
+    `强势追涨 Top${row.candidate_rank} · ${row.candidate_status_reason}`;
+  $('#detail-signal-day').textContent = dayText(day);
+  $('#detail-entry').textContent =
+    `${String(row.entry_clock).padStart(4, '0')} · ¥${Number(row.entry_price).toFixed(2)}`;
+  $('#detail-exit').textContent =
+    `${dayText(row.exit_day)} · ${String(row.exit_clock).padStart(4, '0')}`;
+  $('#detail-return').textContent = pct(row.net_return);
+  $('#detail-return').className = tone(row.net_return);
+  $('#stock-market-status').textContent = '正在读取日K与分时';
+  $('#stock-dialog').showModal();
+  marketChart().clear();
+  setMarketView('daily');
+  const state = MARKET_STATE;
+  try {
+    const [daily, minute] = await Promise.all([
+      loadMarketAsset(
+        `candidate-market/daily/${row.code.slice(0, 2)}/${row.code}.json`,
+      ),
+      loadMarketAsset(
+        `candidate-market/minutes/${day}/${row.code.slice(0, 2)}/${row.code}.json`,
+      ),
+    ]);
+    if (MARKET_STATE !== state) return;
+    state.daily = daily;
+    state.minute = minute;
+    setMarketView(state.view);
+  } catch (error) {
+    if (MARKET_STATE === state) {
+      $('#stock-market-status').textContent = `行情读取失败：${error.message}`;
+    }
+  }
+}
+
 function candidateRows() {
   const year = $('#candidate-year').value;
   const status = $('#candidate-status').value;
@@ -168,13 +475,25 @@ function renderCandidates() {
     <thead><tr><th>日期</th><th>股票</th><th>排名</th><th>状态</th>
     <th>09:36确认</th><th>09:37入场</th><th>退出</th><th>持有</th><th>净收益</th></tr></thead>
     <tbody>${rows.map((row) => `
-      <tr><td>${row.day}</td><td><strong>${escapeHtml(row.name)}</strong><small>${row.code}</small></td>
+      <tr><td>${dayText(row.day)}</td><td>
+      <button class="candidate-stock" type="button"
+        data-code="${row.code}" data-day="${row.day}">
+        <strong>${escapeHtml(row.name)}</strong><small>${row.code}</small>
+      </button></td>
       <td>${row.candidate_rank}/${row.basket_size}</td>
       <td><span class="badge ${row.candidate_status}">${statusLabels[row.candidate_status] || row.candidate_status}</span></td>
       <td class="${tone(row.confirmation_return)}">${pct(row.confirmation_return)}</td>
       <td>¥${Number(row.entry_price).toFixed(2)}</td>
       <td>${row.exit_day} ${String(row.exit_clock).padStart(4, '0')}</td>
       <td>${row.hold_days}日</td><td class="${tone(row.net_return)}">${pct(row.net_return)}</td></tr>`).join('')}</tbody>`;
+  $('#candidate-table').querySelectorAll('.candidate-stock').forEach(
+    button => button.addEventListener('click', () => {
+      const row = DATA.candidate_rows.find(item =>
+        item.code === button.dataset.code
+        && String(item.day) === button.dataset.day);
+      if (row) openCandidateMarket(row);
+    }),
+  );
   const sync = DATA.selection_sync || {};
   $('#sync-state').textContent = sync.status === 'ready'
     ? `同步正常 · ${dateTime(sync.updated_at)}`
@@ -205,7 +524,18 @@ function bind() {
     localStorage.removeItem(CAPITAL_STORAGE_KEY);
     renderAccount();
   });
+  $('#stock-daily-tab').addEventListener(
+    'click', () => setMarketView('daily'));
+  $('#stock-minute-tab').addEventListener(
+    'click', () => setMarketView('minute'));
+  $('#stock-dialog-close').addEventListener(
+    'click', () => $('#stock-dialog').close());
+  $('#stock-dialog').addEventListener('close', () => {
+    MARKET_STATE = null;
+    MARKET_CHART?.clear();
+  });
   $('#refresh').addEventListener('click', () => location.reload());
+  window.addEventListener('resize', () => MARKET_CHART?.resize());
 }
 
 async function start() {
