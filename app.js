@@ -9,6 +9,10 @@ const $ = (selector) => document.querySelector(selector);
 const pct = (value) => Number.isFinite(Number(value))
   ? `${(Number(value) * 100).toFixed(2)}%`
   : '--';
+const signedPct = (value) => Number.isFinite(Number(value))
+  ? `${Number(value) > 0 ? '+' : ''}${(Number(value) * 100).toFixed(2)}%`
+  : '--';
+const buyGainLabel = value => `买 ${signedPct(value)}`;
 const money = (value) => Number.isFinite(Number(value))
   ? Number(value).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
@@ -164,6 +168,15 @@ async function loadCompressedAsset(path) {
 }
 
 const compactDay = value => String(value || '').replaceAll('-', '');
+const selectionEntryReturn = (selection, code) => {
+  if (Number.isFinite(Number(selection?.entry_return))) {
+    return Number(selection.entry_return);
+  }
+  return DATA.candidate_rows.find(item =>
+    item.code === code
+    && compactDay(item.day) === compactDay(selection?.day)
+  )?.entry_return;
+};
 const signalLabel = (direction, strength) => {
   const long = Number(direction) === 1;
   return strength === 'weak'
@@ -430,7 +443,7 @@ function dailyMarketMarks(daily) {
   const dates = bars.map(item => compactDay(item[0]));
   const makeMark = (
     day, direction, strength, kind, price, probability = null,
-    clockValue = '',
+    clockValue = '', displayLabel = '',
   ) => {
     const index = dates.indexOf(compactDay(day));
     if (index < 0) return null;
@@ -439,11 +452,11 @@ function dailyMarketMarks(daily) {
     const simulatedSell = kind === 'simulated_sell';
     const buy = kind === 'strategy_buy';
     const formula = kind === 'formula_signal';
-    const label = buy
+    const label = displayLabel || (buy
       ? '买点'
       : actualSell ? '卖出'
       : simulatedSell ? '模拟卖出'
-      : signalLabel(direction, strength);
+      : signalLabel(direction, strength));
     const color = actualSell
       ? '#3fc28b'
       : simulatedSell ? '#7cae9b'
@@ -454,7 +467,9 @@ function dailyMarketMarks(daily) {
       ? Number(price)
       : long ? Number(bars[index][3]) : Number(bars[index][2]);
     const clock = String(clockValue || '').padStart(4, '0');
-    const probabilityText = Number.isFinite(Number(probability))
+    const probabilityText = probability !== null
+      && probability !== ''
+      && Number.isFinite(Number(probability))
       ? `<br>概率 ${(Number(probability) * 100).toFixed(1)}%` : '';
     return {
       name: label,
@@ -515,6 +530,7 @@ function dailyMarketMarks(daily) {
       selection.entry_price,
       null,
       selection.entry_clock,
+      buyGainLabel(selectionEntryReturn(selection, daily.code)),
     );
     if (buy) marks.push(buy);
     const key = `${compactDay(selection.exit_day)}/${selection.exit_clock}`;
@@ -838,7 +854,9 @@ function minuteMarketMarks(minute) {
         padding: [2, 4],
         fontSize: 9,
         fontWeight: 700,
-        formatter: `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`,
+        formatter: kind === 'strategy_buy'
+          ? label
+          : `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`,
       },
       tooltip: {
         formatter: `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`
@@ -859,7 +877,8 @@ function minuteMarketMarks(minute) {
         null, 'confirmation',
       );
       const buy = makeMark(
-        '买点', selection.entry_clock, 1, 'strong',
+        buyGainLabel(selectionEntryReturn(selection, row.code)),
+        selection.entry_clock, 1, 'strong',
         selection.entry_price, 'strategy_buy',
       );
       if (confirmation) marks.push(confirmation);
@@ -883,7 +902,8 @@ function minuteMarketMarks(minute) {
     && compactDay(row.day) === day
   ) {
     const buy = makeMark(
-      '买点', row.entry_clock, 1, 'strong',
+      buyGainLabel(row.entry_return),
+      row.entry_clock, 1, 'strong',
       row.entry_price, 'strategy_buy',
     );
     if (buy) marks.push(buy);
