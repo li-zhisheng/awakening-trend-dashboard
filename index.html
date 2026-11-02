@@ -3,299 +3,109 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0d1114">
+  <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
-  <title>多空指标 · 历史回测与实盘验证</title>
-  <link rel="stylesheet" href="styles.css?v=20261101-price-limits">
-  <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261101-price-limits" defer></script>
+  <title>强势追涨 · 主策略看板</title>
+  <link rel="stylesheet" href="styles.css?v=20261102-capital">
+  <script src="app.js?v=20261102-capital" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">↕</span>
-      <div>
-        <div class="eyebrow">AWAKENING / TREND SYSTEM</div>
-        <h1>多空指标</h1>
-      </div>
+    <div>
+      <div class="eyebrow">AWAKENING / PRIMARY STRATEGY</div>
+      <h1>强势追涨</h1>
     </div>
     <div class="header-status">
-      <span id="live-state" class="status-dot">读取中</span>
-      <span id="generated-at">--</span>
-      <button id="refresh" type="button">刷新数据</button>
+      <span id="strategy-state" class="status">读取中</span>
+      <time id="generated-at">--</time>
+      <button id="refresh" type="button" title="刷新数据" aria-label="刷新数据">↻</button>
     </div>
   </header>
 
-  <nav class="view-tabs" aria-label="多空指标数据视图">
-    <button class="active" data-view="overview" type="button">总览</button>
-    <button data-view="candidates" type="button">策略选股</button>
-    <button data-view="stocks" type="button">个股回测</button>
-    <button data-view="paper" type="button">实盘模拟</button>
-    <button data-view="research" type="button">信号研究</button>
-    <button data-view="contracts" type="button">数据口径</button>
+  <nav class="view-tabs" aria-label="主策略视图">
+    <button class="active" data-view="account" type="button">模拟账户</button>
+    <button data-view="candidates" type="button">候选记录</button>
   </nav>
 
   <main>
-    <section id="view-overview" class="view active">
-      <div id="overview-kpis" class="kpi-grid" aria-live="polite"></div>
-      <div class="chart-grid">
-        <section class="panel chart-panel">
+    <section id="view-account" class="view active">
+      <section class="capital-control">
+        <label for="initial-capital">初始本金</label>
+        <div class="capital-input">
+          <span>¥</span>
+          <input id="initial-capital" type="number" min="1000" step="1000"
+                 inputmode="decimal" value="50000">
+        </div>
+        <button id="capital-reset" type="button" title="恢复冻结本金"
+                aria-label="恢复冻结本金">↺</button>
+        <span id="capital-contract">--</span>
+      </section>
+      <div id="account-kpis" class="kpi-grid"></div>
+
+      <section class="status-band">
+        <div><span>模拟区间</span><strong id="simulation-period">--</strong></div>
+        <div><span>冻结版本</span><strong id="frozen-version">--</strong></div>
+        <div><span>执行时点</span><strong id="execution-time">--</strong></div>
+        <div><span>交易记录</span><strong id="trade-count">--</strong></div>
+      </section>
+
+      <div class="split-grid">
+        <section class="panel">
           <div class="panel-head">
-            <div><h2>月度收益</h2><p id="monthly-chart-note">强信号与强弱全部参与对比</p></div>
+            <div><h2>年度模拟资金</h2><p>从2024年起连续复合</p></div>
           </div>
-          <div id="monthly-chart" class="chart"></div>
+          <div class="table-wrap"><table id="annual-table"></table></div>
         </section>
-        <section class="panel chart-panel">
+        <section class="panel">
           <div class="panel-head">
-            <div><h2>累计净值</h2><p id="monthly-nav-note">强信号逐月复合路径</p></div>
+            <div><h2>冻结规则</h2><p>唯一现役主策略</p></div>
           </div>
-          <div id="nav-chart" class="chart"></div>
+          <dl id="rule-list" class="rule-list"></dl>
         </section>
       </div>
+
       <section class="panel">
         <div class="panel-head">
-          <div><h2>月份明细</h2><p id="monthly-table-note">收益、信号、交易和月末持仓</p></div>
-          <label class="panel-control">策略
-            <select id="monthly-strategy" aria-label="选择月份收益策略">
-              <option value="original">原始多空策略</option>
-              <option value="v6">现役V6一分钟回放</option>
-            </select>
-          </label>
+          <div><h2>完整性校验</h2><p>协议、结果与候选轴</p></div>
+          <span id="integrity-state" class="status">--</span>
         </div>
-        <div class="table-wrap"><table id="monthly-table"></table></div>
-      </section>
-      <section class="panel" id="daily-return-panel">
-        <div class="panel-head">
-          <div><h2>交易日明细</h2><p>与月份明细共用同一份一分钟持仓净值</p></div>
-          <label class="panel-control">月份
-            <select id="daily-return-month" aria-label="选择交易日明细月份"></select>
-          </label>
-        </div>
-        <div class="table-wrap"><table id="daily-return-table"></table></div>
+        <div id="integrity-grid" class="hash-grid"></div>
       </section>
     </section>
 
     <section id="view-candidates" class="view">
       <div id="candidate-kpis" class="kpi-grid"></div>
-      <section class="status-band selection-summary">
-        <div><span>展示策略</span><strong id="selection-strategy">--</strong></div>
-        <div><span>信息截止</span><strong id="selection-information-end">--</strong></div>
-        <div><span>执行口径</span><strong id="selection-training-window">--</strong></div>
-        <div><span>验证边界</span><strong id="selection-coverage">--</strong></div>
-      </section>
-      <div class="toolbar selection-toolbar">
-        <label>年份<select id="selection-year">
-          <option value="all">全部年份</option>
+      <div class="toolbar">
+        <label>年份<select id="candidate-year">
+          <option value="all">全部</option>
           <option value="2024">2024</option>
           <option value="2025">2025</option>
           <option value="2026">2026</option>
         </select></label>
-        <label>收益<select id="selection-result">
-          <option value="all">全部交易</option>
-          <option value="profit">盈利</option>
-          <option value="loss">亏损</option>
-        </select></label>
-        <label>状态<select id="selection-status">
+        <label>状态<select id="candidate-status">
           <option value="all">全部候选</option>
-          <option value="primary_trade">主账户已交易</option>
+          <option value="primary_trade">主账户交易</option>
           <option value="observation_candidate">观察候选</option>
           <option value="entry_unfillable">成交约束未通过</option>
         </select></label>
-        <label>搜索<input id="selection-search" type="search" placeholder="代码或名称"></label>
-        <span id="selection-count" class="toolbar-count">--</span>
+        <label>结果<select id="candidate-result">
+          <option value="all">全部结果</option>
+          <option value="profit">盈利</option>
+          <option value="loss">亏损</option>
+        </select></label>
+        <label>搜索<input id="candidate-search" type="search" placeholder="代码或名称"></label>
+        <span id="candidate-count" class="toolbar-count">--</span>
       </div>
       <section class="panel">
         <div class="panel-head">
-          <div>
-            <h2>V502 每日Top2候选明细</h2>
-            <p>全部09:36确认候选均展示；V502-U主账户交易与观察候选分开标记</p>
-          </div>
-          <span id="selection-integrity" class="status">--</span>
+          <div><h2>每日 Top2 候选</h2><p>09:36确认，09:37执行</p></div>
+          <span id="sync-state" class="status">--</span>
         </div>
-        <div id="candidate-hash" class="hash-label">--</div>
         <div class="table-wrap candidate-table-wrap">
           <table id="candidate-table"></table>
         </div>
       </section>
     </section>
-
-    <section id="view-stocks" class="view">
-      <div class="toolbar">
-        <label>搜索股票<input id="stock-search" type="search" placeholder="代码或名称"></label>
-        <label>收益状态<select id="stock-return-filter">
-          <option value="all">全部</option>
-          <option value="profit">盈利</option>
-          <option value="loss">亏损</option>
-          <option value="holding">期末持仓</option>
-        </select></label>
-        <label>排序<select id="stock-sort">
-          <option value="return_desc">年度收益从高到低</option>
-          <option value="return_asc">年度收益从低到高</option>
-          <option value="trades_desc">交易次数从多到少</option>
-          <option value="drawdown_asc">最大浮亏从大到小</option>
-        </select></label>
-        <span id="stock-count" class="toolbar-count">--</span>
-      </div>
-      <section class="panel">
-        <div class="table-wrap stock-table-wrap">
-          <table id="stock-table"></table>
-        </div>
-        <div class="pagination">
-          <button id="stock-prev" type="button">上一页</button>
-          <span id="stock-page">--</span>
-          <button id="stock-next" type="button">下一页</button>
-        </div>
-      </section>
-    </section>
-
-    <section id="view-paper" class="view">
-      <div id="paper-kpis" class="kpi-grid"></div>
-      <section class="status-band">
-        <div><span>独立采集状态</span><strong id="paper-status">--</strong></div>
-        <div><span>采集快照</span><strong id="paper-snapshot">--</strong></div>
-        <div><span>下一交易日</span><strong id="paper-next-day">--</strong></div>
-        <div><span>成交契约</span><strong id="paper-contract">--</strong></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>今日首批多空信号</h2><p>源行情时间、源报价、前收盘及涨跌幅原样留痕</p></div>
-          <span id="validation-first-status" class="status"></span>
-        </div>
-        <div class="table-wrap"><table id="validation-first-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>当前持仓与异常账户</h2><p>仅显示持仓、待卖、停牌或异常状态</p></div>
-        </div>
-        <div class="table-wrap"><table id="paper-stocks"></table></div>
-      </section>
-      <div class="split-grid">
-        <section class="panel">
-          <div class="panel-head"><div><h2>最近成交</h2><p>下一次独立盘口模拟</p></div></div>
-          <div class="table-wrap"><table id="paper-fills"></table></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><div><h2>最近信号</h2><p>多、空、涨、跌原始信号留痕</p></div></div>
-          <div class="table-wrap"><table id="paper-signals"></table></div>
-        </section>
-      </div>
-    </section>
-
-    <section id="view-research" class="view">
-      <div id="research-kpis" class="kpi-grid"></div>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>全天信号质量</h2><p>57,448 条首次多头，买入风险门与收益模型分开验收</p></div>
-          <span id="quality-status" class="status"></span>
-        </div>
-        <div class="table-wrap"><table id="quality-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>优质多头影子筛选</h2><p>低追高与稳定性风险门，趋势一致性排序，每日最多 5 个等权资金槽位</p></div>
-          <span id="quality-selection-status" class="status"></span>
-        </div>
-        <div class="table-wrap"><table id="quality-selection-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>分时段风险收益</h2><p>首次涨幅不超过 5% 且当时稳定性通过，不同时段独立比较</p></div>
-        </div>
-        <div class="table-wrap"><table id="quality-band-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>二次买点与利润保护</h2><p>30,900 个完整持仓区间，二次结构与提前卖出均按下一根 5 分钟成交并执行 T+1</p></div>
-          <span id="second-exit-status" class="status"></span>
-        </div>
-        <div class="table-wrap"><table id="second-entry-table"></table></div>
-        <div class="table-wrap research-subtable"><table id="profit-exit-table"></table></div>
-        <div class="panel-head research-subhead">
-          <div><h3>V6 卖出闭环</h3><p>20 个资金槽、持仓去重、T+1、下一根 5 分钟成交与双边成本</p></div>
-          <span id="v6-exit-status" class="status"></span>
-        </div>
-        <div class="table-wrap"><table id="v6-exit-table"></table></div>
-      </section>
-      <div class="chart-grid">
-        <section class="panel chart-panel">
-          <div class="panel-head"><div><h2>三种入场价格</h2><p>同名单、同卖点的配对比较</p></div></div>
-          <div id="entry-chart" class="chart"></div>
-        </section>
-        <section class="panel chart-panel">
-          <div class="panel-head"><div><h2>提前空点</h2><p>原空点与预警候选月度路径</p></div></div>
-          <div id="exit-chart" class="chart"></div>
-        </section>
-      </div>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>首次多头赢家识别</h2><p>09:35 先选 3 只，后续两批各保留 1 个名额</p></div>
-        </div>
-        <div class="table-wrap"><table id="winner-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>大涨股共性与板块事件</h2><p>首次多头时点可见证据，全样本分段检验</p></div>
-        </div>
-        <div class="table-wrap"><table id="commonality-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>官方公告增量验证</h2><p>巨潮免费公告，严格截断至首次多头时点</p></div>
-          <span id="announcement-status" class="status"></span>
-        </div>
-        <div class="table-wrap"><table id="announcement-table"></table></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div><h2>分钟级会计验收</h2><p>真实缓存路径、T+1、整手与非负现金</p></div>
-        </div>
-        <div id="validation-detail" class="definition-grid"></div>
-      </section>
-    </section>
-
-    <section id="view-contracts" class="view">
-      <section class="panel">
-        <div class="panel-head"><div><h2>信号与成交口径</h2><p>历史回测、研究代理与实时模拟严格分离</p></div></div>
-        <div id="contract-list" class="definition-grid"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head"><div><h2>数据源状态</h2><p>每项数据的更新时间、体积和可用性</p></div></div>
-        <div class="table-wrap"><table id="source-table"></table></div>
-      </section>
-      <section class="panel warning-panel">
-        <h2>生产边界</h2>
-        <p>多头潜力榜和提前空点均为研究/影子结果，不控制真实交易。实时模拟账户与券商、手机和真实下单接口完全隔离。</p>
-      </section>
-    </section>
   </main>
-
-  <dialog id="stock-dialog">
-    <div class="dialog-head">
-      <div><h2 id="stock-dialog-title">个股详情</h2><p id="stock-dialog-meta"></p></div>
-      <button id="stock-dialog-close" type="button" aria-label="关闭">×</button>
-    </div>
-    <div class="stock-market-toolbar">
-      <div class="segmented" role="tablist" aria-label="行情周期">
-        <button id="stock-daily-tab" class="active" type="button" role="tab" aria-selected="true">日K</button>
-        <button id="stock-minute-tab" type="button" role="tab" aria-selected="false">分时</button>
-      </div>
-      <div id="stock-minute-nav" hidden>
-        <button id="stock-minute-prev" type="button" aria-label="上一交易日" title="上一交易日">‹</button>
-        <label id="stock-minute-date-wrap">交易日
-          <select id="stock-minute-date" aria-label="选择分时交易日"></select>
-        </label>
-        <button id="stock-minute-next" type="button" aria-label="下一交易日" title="下一交易日">›</button>
-      </div>
-      <span id="stock-market-status">正在读取行情数据</span>
-    </div>
-    <div id="stock-limit-band" class="stock-limit-band" hidden></div>
-    <div id="stock-detail-chart" class="chart stock-market-chart"></div>
-    <div class="split-grid">
-      <section><h3>月度收益</h3><div class="table-wrap"><table id="stock-monthly"></table></div></section>
-      <section><h3>分钟买卖点</h3><div class="table-wrap"><table id="stock-executions"></table></div></section>
-    </div>
-  </dialog>
-
-  <footer>多空指标独立研究站 · 使用真实行情与冻结信号证据</footer>
 </body>
 </html>
