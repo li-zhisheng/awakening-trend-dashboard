@@ -138,12 +138,38 @@ function renderAccount() {
 }
 
 async function loadMarketAsset(path) {
-  const response = await fetch(`${path}?v=${DATA.integrity.result_sha256}`, {
+  const response = await fetch(
+    `${path}?v=${encodeURIComponent(DATA.generated_at)}`,
+    {
     cache: 'force-cache',
-  });
+    },
+  );
   if (!response.ok) throw new Error(`行情数据 HTTP ${response.status}`);
   return response.json();
 }
+
+async function loadCompressedAsset(path) {
+  const response = await fetch(path, { cache: 'force-cache' });
+  if (!response.ok) throw new Error(`分钟归档 HTTP ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  if (typeof DecompressionStream !== 'function') {
+    throw new Error('浏览器不支持gzip分钟归档');
+  }
+  const stream = new Blob([bytes]).stream()
+    .pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).json();
+}
+
+const compactDay = value => String(value || '').replaceAll('-', '');
+const signalLabel = (direction, strength) => {
+  const long = Number(direction) === 1;
+  return strength === 'weak'
+    ? (long ? '涨' : '跌')
+    : (long ? '多' : '空');
+};
 
 function marketChart() {
   if (!MARKET_CHART) {
@@ -221,6 +247,135 @@ function minuteVolumeLabel(direction) {
     ? '上涨成交量' : direction < 0 ? '下跌成交量' : '平盘成交量';
 }
 
+function dailyJumpOverlay(closes) {
+  return {
+    name: '分时跳转热区',
+    type: 'custom',
+    coordinateSystem: 'cartesian2d',
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    data: closes.map((value, index) => [index, value]),
+    encode: { x: 0, y: 1 },
+    tooltip: { show: false },
+    z: 100,
+    silent: false,
+    clip: true,
+    renderItem: (params, api) => {
+      const center = api.coord([api.value(0), api.value(1)]);
+      const band = Math.max(5, Math.abs(api.size([1, 0])[0]) * .92);
+      return {
+        type: 'rect',
+        shape: {
+          x: center[0] - band / 2,
+          y: params.coordSys.y,
+          width: band,
+          height: params.coordSys.height,
+        },
+        style: { fill: 'rgba(85,197,199,.001)' },
+        emphasis: {
+          style: {
+            fill: 'rgba(85,197,199,.16)',
+            stroke: '#55c5c7',
+            lineWidth: 1,
+          },
+        },
+        cursor: 'pointer',
+      };
+    },
+  };
+}
+
+function dailyMarketMarks(daily) {
+  const bars = daily.bars || [];
+  const dates = bars.map(item => compactDay(item[0]));
+  const makeMark = (
+    day, direction, strength, kind, price, probability = null,
+  ) => {
+    const index = dates.indexOf(compactDay(day));
+    if (index < 0) return null;
+    const long = Number(direction) === 1;
+    const actualSell = kind === 'strategy_sell';
+    const simulatedSell = kind === 'simulated_sell';
+    const buy = kind === 'strategy_buy';
+    const formula = kind === 'formula_signal';
+    const label = buy
+      ? '买点'
+      : actualSell ? '卖出'
+      : simulatedSell ? '模拟卖出'
+      : signalLabel(direction, strength);
+    const color = actualSell
+      ? '#3fc28b'
+      : simulatedSell ? '#7cae9b'
+      : buy ? '#ef6666'
+      : long ? '#ef6666' : '#3fc28b';
+    const execution = !formula;
+    const markerPrice = Number.isFinite(Number(price))
+      ? Number(price)
+      : long ? Number(bars[index][3]) : Number(bars[index][2]);
+    return {
+      name: label,
+      kind,
+      direction: Number(direction),
+      strength,
+      probability,
+      coord: [index, markerPrice],
+      value: label,
+      symbol: execution
+        ? (simulatedSell ? 'triangle' : 'diamond')
+        : 'circle',
+      symbolSize: execution ? 30 : 36,
+      symbolOffset: [
+        0,
+        execution
+          ? (long ? '-82%' : '82%')
+          : long ? '72%' : '-72%',
+      ],
+      itemStyle: {
+        color,
+        borderColor: '#101619',
+        borderWidth: 3,
+      },
+      label: {
+        show: true,
+        color: '#fff',
+        fontSize: 12,
+        lineHeight: 16,
+        fontWeight: 700,
+        formatter: label,
+      },
+    };
+  };
+  const marks = (daily.signal_marks || []).map(item =>
+    makeMark(
+      item[0], item[2], item[3],
+      'formula_signal', item[5], item[4],
+    )).filter(Boolean);
+  const exitKeys = new Set();
+  for (const selection of daily.selections || []) {
+    const buy = makeMark(
+      selection.day,
+      1,
+      'strong',
+      'strategy_buy',
+      selection.entry_price,
+    );
+    if (buy) marks.push(buy);
+    const key = `${compactDay(selection.exit_day)}/${selection.exit_clock}`;
+    if (exitKeys.has(key)) continue;
+    const sell = makeMark(
+      selection.exit_day,
+      -1,
+      'strong',
+      selection.candidate_status === 'primary_trade'
+        ? 'strategy_sell' : 'simulated_sell',
+      selection.exit_price,
+    );
+    if (sell) marks.push(sell);
+    exitKeys.add(key);
+  }
+  return marks;
+}
+
 function renderDailyMarket() {
   const { daily, row } = MARKET_STATE;
   const bars = daily.bars || [];
@@ -230,31 +385,7 @@ function renderDailyMarket() {
   const ma10 = movingAverage(closes, 10);
   const ma20 = movingAverage(closes, 20);
   const { start, end } = stockDailyWindow(dates, row.day);
-  const marks = (daily.selections || []).map(selection => {
-    const index = dates.indexOf(String(selection.day));
-    if (index < 0) return null;
-    const selected = String(selection.day) === String(row.day);
-    return {
-      name: selected ? '买点' : '选股',
-      coord: [index, Number(bars[index][3])],
-      value: selected ? '买点' : '选股',
-      symbol: selected ? 'diamond' : 'circle',
-      symbolSize: selected ? 30 : 26,
-      symbolOffset: [0, '72%'],
-      itemStyle: {
-        color: selected ? '#ef6666' : '#e5b94f',
-        borderColor: '#101619',
-        borderWidth: 3,
-      },
-      label: {
-        show: true,
-        color: '#fff',
-        fontSize: 11,
-        fontWeight: 700,
-        formatter: selected ? '买点' : '选股',
-      },
-    };
-  }).filter(Boolean);
+  const marks = dailyMarketMarks(daily);
   const chart = marketChart();
   chart.off('click');
   chart.setOption({
@@ -387,21 +518,196 @@ function renderDailyMarket() {
           },
         })),
       },
+      dailyJumpOverlay(closes),
     ],
   }, true);
   chart.on('click', params => {
     const index = Number(params?.dataIndex);
     const day = dates[index];
-    const selection = (daily.selections || []).find(
-      item => String(item.day) === String(day));
-    if (!selection) return;
-    const selectedRow = DATA.candidate_rows.find(item =>
-      item.code === row.code && String(item.day) === String(day));
-    if (selectedRow) openCandidateMarket(selectedRow, 'minute');
+    if (day) openMarketDate(day);
   });
+  const formulaMarks = marks.filter(mark =>
+    mark.kind === 'formula_signal');
+  const sellMarks = marks.filter(mark =>
+    ['strategy_sell', 'simulated_sell'].includes(mark.kind));
   $('#stock-market-status').textContent =
     `前复权日K ${dayText(bars[0][0])} 至 ${dayText(bars.at(-1)[0])}`
-    + ` · ${bars.length} 个交易日 · MA5/MA10/MA20 · 点击入选K线查看分时`;
+    + ` · 多空 ${formulaMarks.length} · 卖点 ${sellMarks.length}`
+    + ' · 点击任意K线查看对应分时';
+}
+
+function minuteMarketMarks(minute) {
+  const { row, daily } = MARKET_STATE;
+  const day = compactDay(minute.day);
+  const points = minute.points || [];
+  const clocks = points.map(item => String(item[0]).padStart(4, '0'));
+  const previousClose = Number(minute.previous_close);
+  const makeMark = (
+    name, clockValue, direction, strength, price, kind,
+  ) => {
+    const clock = String(clockValue).padStart(4, '0');
+    let index = clocks.indexOf(clock);
+    if (index < 0) {
+      index = clocks.findIndex(value => value > clock);
+    }
+    if (index < 0) return null;
+    const long = Number(direction) === 1;
+    const actualSell = kind === 'strategy_sell';
+    const simulatedSell = kind === 'simulated_sell';
+    const execution = [
+      'strategy_buy', 'strategy_sell', 'simulated_sell',
+    ].includes(kind);
+    const markerPrice = Number.isFinite(Number(price))
+      ? Number(price) : Number(points[index][4]);
+    const label = name || (
+      kind === 'strategy_buy' ? '买点'
+      : actualSell ? '卖出'
+      : simulatedSell ? '模拟卖出'
+      : signalLabel(direction, strength)
+    );
+    const color = actualSell
+      ? '#3fc28b'
+      : simulatedSell ? '#7cae9b'
+      : kind === 'confirmation' ? '#e5b94f'
+      : long ? '#ef6666' : '#3fc28b';
+    const change = (markerPrice / previousClose - 1) * 100;
+    return {
+      name: label,
+      kind,
+      coord: [index, markerPrice],
+      value: label,
+      symbol: execution
+        ? (simulatedSell ? 'triangle' : 'diamond')
+        : 'circle',
+      symbolSize: execution ? 20 : strength === 'weak' ? 12 : 16,
+      symbolOffset: [
+        0,
+        execution
+          ? (long ? '55%' : '-55%')
+          : long ? '-55%' : '55%',
+      ],
+      itemStyle: {
+        color,
+        borderColor: '#101619',
+        borderWidth: execution ? 2 : 1,
+      },
+      label: {
+        show: true,
+        position: long ? 'top' : 'bottom',
+        distance: execution ? 22 : 16,
+        color,
+        backgroundColor: 'rgba(13,17,20,.92)',
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 3,
+        padding: [3, 5],
+        fontSize: strength === 'weak' ? 9 : 10,
+        fontWeight: 700,
+        formatter: `${label} ${clock.slice(0, 2)}:${clock.slice(2)}\n`
+          + `¥${markerPrice.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
+      },
+    };
+  };
+  const marks = (minute.signal_marks || []).map(item =>
+    makeMark(
+      '', item[1], item[2], item[3],
+      item[5], 'formula_signal',
+    )).filter(Boolean);
+  for (const selection of daily.selections || []) {
+    if (compactDay(selection.day) === day) {
+      const confirmation = makeMark(
+        '确认', '0936', 1, 'strong',
+        null, 'confirmation',
+      );
+      const buy = makeMark(
+        '买点', selection.entry_clock, 1, 'strong',
+        selection.entry_price, 'strategy_buy',
+      );
+      if (confirmation) marks.push(confirmation);
+      if (buy) marks.push(buy);
+    }
+    if (compactDay(selection.exit_day) === day) {
+      const actual = selection.candidate_status === 'primary_trade';
+      const sell = makeMark(
+        actual ? '卖出' : '模拟卖出',
+        selection.exit_clock,
+        -1,
+        'strong',
+        selection.exit_price,
+        actual ? 'strategy_sell' : 'simulated_sell',
+      );
+      if (sell) marks.push(sell);
+    }
+  }
+  if (
+    !marks.some(mark => mark.kind === 'strategy_buy')
+    && compactDay(row.day) === day
+  ) {
+    const buy = makeMark(
+      '买点', row.entry_clock, 1, 'strong',
+      row.entry_price, 'strategy_buy',
+    );
+    if (buy) marks.push(buy);
+  }
+  return marks;
+}
+
+async function loadMinuteForDay(day, state = MARKET_STATE) {
+  const compact = compactDay(day);
+  const code = state.row.code;
+  try {
+    return await loadMarketAsset(
+      `candidate-market/minutes/${compact}/${code.slice(0, 2)}/${code}.json`,
+    );
+  } catch (localError) {
+    if (!compact.startsWith('2026')) throw localError;
+    const month = compact.slice(0, 6);
+    const routed = DATA.minute_archive?.month_base_urls?.[month];
+    const base = String(
+      routed || DATA.minute_archive?.base_url || ''
+    ).replace(/\/+$/, '');
+    if (!base) throw localError;
+    const payload = await loadCompressedAsset(
+      `${base}/months/${month}/${code.slice(0, 2)}/${code}.json.gz`,
+    );
+    const values = payload.days || [payload];
+    const source = values.find(item =>
+      compactDay(item.date) === compact);
+    if (!source) throw localError;
+    const bars = state.daily.bars || [];
+    const index = bars.findIndex(item => compactDay(item[0]) === compact);
+    const previousClose = index > 0
+      ? Number(bars[index - 1][4])
+      : Number(source.previous_close);
+    return {
+      schema: 'awakening-strong-momentum-minute-v1',
+      code,
+      name: state.row.name,
+      day: compact,
+      previous_close: previousClose,
+      points: source.points || [],
+      signal_marks: (state.daily.signal_marks || []).filter(
+        mark => compactDay(mark[0]) === compact),
+    };
+  }
+}
+
+async function openMarketDate(day) {
+  const state = MARKET_STATE;
+  if (!state) return;
+  $('#stock-market-status').textContent =
+    `正在读取 ${dayText(day)} 的真实1分钟`;
+  try {
+    const minute = await loadMinuteForDay(day, state);
+    if (MARKET_STATE !== state) return;
+    state.minute = minute;
+    setMarketView('minute');
+  } catch (_error) {
+    if (MARKET_STATE === state) {
+      $('#stock-market-status').textContent =
+        `${dayText(day)} 暂无统一1分钟归档，日K保持可用`;
+    }
+  }
 }
 
 function renderMinuteMarket() {
@@ -425,55 +731,7 @@ function renderMinuteMarket() {
     previousClose * .003,
     ...prices.map(price => Math.abs(price - previousClose)),
   ) * 1.12;
-  const confirmationClock = '0936';
-  const entryClock = String(row.entry_clock).padStart(4, '0');
-  const markPoints = [
-    {
-      name: '确认',
-      clock: confirmationClock,
-      price: prices[clocks.indexOf(confirmationClock)],
-      color: '#e5b94f',
-      symbol: 'circle',
-    },
-    {
-      name: '买点',
-      clock: entryClock,
-      price: Number(row.entry_price),
-      color: '#ef6666',
-      symbol: 'diamond',
-    },
-  ].map(mark => {
-    const index = clocks.indexOf(mark.clock);
-    if (index < 0 || !Number.isFinite(mark.price)) return null;
-    const change = (mark.price / previousClose - 1) * 100;
-    return {
-      name: mark.name,
-      coord: [index, mark.price],
-      value: mark.name,
-      symbol: mark.symbol,
-      symbolSize: mark.name === '买点' ? 22 : 18,
-      symbolOffset: [0, '-55%'],
-      itemStyle: {
-        color: mark.color,
-        borderColor: '#101619',
-        borderWidth: 2,
-      },
-      label: {
-        show: true,
-        position: 'top',
-        distance: 18,
-        color: mark.color,
-        backgroundColor: 'rgba(13,17,20,.92)',
-        borderColor: mark.color,
-        borderWidth: 1,
-        borderRadius: 3,
-        padding: [3, 5],
-        fontWeight: 700,
-        formatter: `${mark.name} ${mark.clock.slice(0, 2)}:${mark.clock.slice(2)}\n`
-          + `¥${mark.price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
-      },
-    };
-  }).filter(Boolean);
+  const markPoints = minuteMarketMarks(minute);
   const chart = marketChart();
   chart.off('click');
   chart.setOption({
@@ -592,7 +850,8 @@ function renderMinuteMarket() {
   }, true);
   $('#stock-market-status').textContent =
     `${dayText(minute.day)} 前复权1分钟 · 昨收 ${previousClose.toFixed(2)}`
-    + ` · ${points.length} 根 · 黄=确认 · 红=买点`;
+    + ` · ${points.length} 根 · `
+    + markPoints.map(mark => mark.name).join(' · ');
 }
 
 function setMarketView(view) {
@@ -639,9 +898,7 @@ async function openCandidateMarket(row, initialView = 'daily') {
       loadMarketAsset(
         `candidate-market/daily/${row.code.slice(0, 2)}/${row.code}.json`,
       ),
-      loadMarketAsset(
-        `candidate-market/minutes/${day}/${row.code.slice(0, 2)}/${row.code}.json`,
-      ),
+      loadMinuteForDay(day, state),
     ]);
     if (MARKET_STATE !== state) return;
     state.daily = daily;
