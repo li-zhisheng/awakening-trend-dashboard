@@ -198,7 +198,8 @@ const signalLabel = (direction, strength) => {
 };
 const entryTagClass = (tag) => {
   if (tag === '板块背离') return 'divergence';
-  if (tag === '动态支撑未成交') return 'no-pullback';
+  if (tag === '10:00后支撑触达') return 'late-support';
+  if (tag === '全天支撑未触达') return 'no-pullback';
   if (tag === '前日涨停' || tag === '前日触板') return 'limit-up';
   return '';
 };
@@ -1307,11 +1308,13 @@ async function openCandidateMarket(row, initialView = 'daily') {
   $('#detail-return').textContent = pct(row.net_return);
   $('#detail-return').className = tone(row.net_return);
   $('#detail-support').textContent = row.dynamic_support_touched
-    ? `${String(row.dynamic_support_entry_clock).padStart(4, '0')} · ¥${Number(row.dynamic_support_price).toFixed(2)} · 低${pct(row.dynamic_support_discount)}`
+    ? `10:00前触达 · ${String(row.dynamic_support_entry_clock).padStart(4, '0')} · ¥${Number(row.dynamic_support_price).toFixed(2)}`
     : [
-        '动态支撑未成交',
+        row.late_dynamic_support_touched
+          ? `订单到期后 ${String(row.full_day_dynamic_support_touch_clock).padStart(4, '0')} 触达`
+          : '全天未触达动态支撑',
         finiteNumber(row.maximum_pullback_discount)
-          ? `最大回落 ${pct(row.maximum_pullback_discount)}`
+          ? `10:00前最大回落 ${pct(row.maximum_pullback_discount)}`
           : '',
         row.maximum_pullback_clock
           ? String(row.maximum_pullback_clock).padStart(4, '0')
@@ -1402,6 +1405,7 @@ function renderStudySummary() {
     ['平均市场涨幅', signedPct(node.mean_market_return_0935)],
     ['强势股占比', pct(node.mean_strong_ratio_0935)],
     ['板块背离率', pct(node.sector_divergence_rate)],
+    ['10点后支撑触达率', pct(node.late_support_touch_rate)],
     ['前日涨停率', pct(node.previous_day_limit_up_rate)],
     [
       '前日成交活跃度',
@@ -1426,7 +1430,7 @@ function renderCandidates() {
     kpi(
       '支撑未成交',
       String(researchCounts.no_pullback || 0),
-      '虽有普通回落，10:00前未触动态支撑价',
+      `10:00前未触达，其中 ${researchCounts.late_dynamic_support_touched || 0} 只当天后续触达`,
     ),
     kpi('前日涨停', String(researchCounts.previous_day_limit_up || 0), '前一交易日收盘封板'),
   ].join('');

@@ -270,6 +270,11 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
   color: #f28a91;
   background: rgba(239, 102, 102, .08);
 }
+.entry-tag.late-support {
+  border-color: rgba(229, 185, 79, .58);
+  color: #efd77f;
+  background: rgba(229, 185, 79, .08);
+}
 .entry-tag.limit-up {
   border-color: rgba(239, 102, 102, .72);
   color: #ffb0b4;

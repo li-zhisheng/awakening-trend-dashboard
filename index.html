@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势追涨 · 主策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261103-support-labels">
+  <link rel="stylesheet" href="styles.css?v=20261103-full-day-support">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261103-support-labels" defer></script>
+  <script src="app.js?v=20261103-full-day-support" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -100,8 +100,8 @@
         <label>研究标签<select id="candidate-study">
           <option value="all">全部标签</option>
           <option value="sector_divergence">板块背离</option>
-          <option value="no_pullback">动态支撑未成交</option>
-          <option value="divergence_no_pullback">背离且支撑未成交</option>
+          <option value="no_pullback">10:00前支撑未触达</option>
+          <option value="divergence_no_pullback">背离且10:00前未触达</option>
           <option value="previous_limit_up">前日涨停</option>
         </select></label>
         <label>搜索<input id="candidate-search" type="search" placeholder="代码或名称"></label>
