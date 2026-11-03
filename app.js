@@ -6,10 +6,12 @@ let MARKET_CHART = null;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
 
 const $ = (selector) => document.querySelector(selector);
-const pct = (value) => Number.isFinite(Number(value))
+const finiteNumber = (value) =>
+  value !== null && value !== '' && Number.isFinite(Number(value));
+const pct = (value) => finiteNumber(value)
   ? `${(Number(value) * 100).toFixed(2)}%`
   : '--';
-const signedPct = (value) => Number.isFinite(Number(value))
+const signedPct = (value) => finiteNumber(value)
   ? `${Number(value) > 0 ? '+' : ''}${(Number(value) * 100).toFixed(2)}%`
   : '--';
 const buyGainLabel = value => `买 ${signedPct(value)}`;
@@ -194,6 +196,16 @@ const signalLabel = (direction, strength) => {
     ? (long ? '涨' : '跌')
     : (long ? '多' : '空');
 };
+const entryTagClass = (tag) => {
+  if (tag === '板块背离') return 'divergence';
+  if (tag === '未给回调') return 'no-pullback';
+  if (tag === '前日涨停' || tag === '前日触板') return 'limit-up';
+  return '';
+};
+const entryTagsHtml = (row) => `
+  <span class="entry-tags">${(row.entry_tags || []).map(tag =>
+    `<span class="entry-tag ${entryTagClass(tag)}">${escapeHtml(tag)}</span>`
+  ).join('')}</span>`;
 
 function roundPriceLimit(value) {
   return Math.floor((Number(value) + 1e-8) * 100 + .5) / 100;
@@ -1259,7 +1271,9 @@ async function openCandidateMarket(row, initialView = 'daily') {
   };
   $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
   $('#stock-dialog-meta').textContent =
-    `强势追涨 Top${row.candidate_rank} · ${row.candidate_status_reason}`;
+    `强势追涨 Top${row.candidate_rank} · ${row.candidate_status_reason}`
+    + ` · ${row.sector_name || '板块未映射'}`;
+  $('#stock-entry-tags').innerHTML = entryTagsHtml(row);
   $('#detail-signal-day').textContent = dayText(day);
   $('#detail-entry').textContent =
     `${String(row.entry_clock).padStart(4, '0')} · ¥${Number(row.entry_price).toFixed(2)}`;
@@ -1267,6 +1281,15 @@ async function openCandidateMarket(row, initialView = 'daily') {
     `${dayText(row.exit_day)} · ${String(row.exit_clock).padStart(4, '0')}`;
   $('#detail-return').textContent = pct(row.net_return);
   $('#detail-return').className = tone(row.net_return);
+  $('#detail-support').textContent = row.dynamic_support_touched
+    ? `${String(row.dynamic_support_entry_clock).padStart(4, '0')} · ¥${Number(row.dynamic_support_price).toFixed(2)} · 低${pct(row.dynamic_support_discount)}`
+    : '10:00前未回调';
+  $('#detail-prior-day').textContent = [
+    row.previous_day_closed_limit_up ? '涨停' : signedPct(row.previous_day_return),
+    Number.isFinite(Number(row.previous_day_amount_ratio))
+      ? `量比 ${Number(row.previous_day_amount_ratio).toFixed(2)}`
+      : '',
+  ].filter(Boolean).join(' · ');
   $('#stock-market-status').textContent = '正在读取日K与分时';
   $('#stock-minute-nav').hidden = true;
   $('#stock-minute-date').innerHTML = '';
@@ -1296,25 +1319,76 @@ function candidateRows() {
   const year = $('#candidate-year').value;
   const status = $('#candidate-status').value;
   const result = $('#candidate-result').value;
+  const study = $('#candidate-study').value;
   const search = $('#candidate-search').value.trim().toLowerCase();
   return DATA.candidate_rows.filter((row) => {
     if (year !== 'all' && String(row.year) !== year) return false;
     if (status !== 'all' && row.candidate_status !== status) return false;
     if (result === 'profit' && Number(row.net_return) <= 0) return false;
     if (result === 'loss' && Number(row.net_return) >= 0) return false;
+    if (study === 'sector_divergence' && !row.sector_divergence) return false;
+    if (study === 'no_pullback' && !row.no_pullback_opportunity) return false;
+    if (
+      study === 'divergence_no_pullback'
+      && !(row.sector_divergence && row.no_pullback_opportunity)
+    ) return false;
+    if (
+      study === 'previous_limit_up'
+      && !row.previous_day_closed_limit_up
+    ) return false;
     return !search || `${row.code} ${row.name}`.toLowerCase().includes(search);
   });
 }
 
+function renderStudySummary() {
+  const selected = $('#candidate-study').value;
+  const keys = {
+    all: 'all',
+    sector_divergence: 'sector_divergence',
+    no_pullback: 'no_pullback',
+    divergence_no_pullback: 'sector_divergence_no_pullback',
+    previous_limit_up: 'previous_day_limit_up',
+  };
+  const node = DATA.entry_research?.groups?.[keys[selected]];
+  if (!node) {
+    $('#study-summary').innerHTML = '';
+    return;
+  }
+  const sectors = (node.top_sectors || []).slice(0, 5)
+    .map(item => `${item.name} ${item.count}`).join(' · ');
+  $('#study-summary').innerHTML = [
+    ['研究样本', String(node.count)],
+    ['胜率', pct(node.win_rate)],
+    ['中位净收益', signedPct(node.median_net_return)],
+    ['平均市场涨幅', signedPct(node.mean_market_return_0935)],
+    ['强势股占比', pct(node.mean_strong_ratio_0935)],
+    ['板块背离率', pct(node.sector_divergence_rate)],
+    ['前日涨停率', pct(node.previous_day_limit_up_rate)],
+    [
+      '前日成交活跃度',
+      Number.isFinite(Number(node.mean_previous_day_amount_ratio))
+        ? `${Number(node.mean_previous_day_amount_ratio).toFixed(2)}x`
+        : '--',
+    ],
+    ['高频板块', sectors || '--', 'sector-list'],
+  ].map(([label, value, className = '']) =>
+    `<div class="${className}"><span>${escapeHtml(label)}</span>`
+    + `<strong>${escapeHtml(value)}</strong></div>`).join('');
+}
+
 function renderCandidates() {
   const counts = DATA.candidate_scope.counts;
+  const researchCounts = DATA.entry_research?.display_counts || {};
   $('#candidate-kpis').innerHTML = [
     kpi('候选总数', String(counts.total), '完整每日 Top2 轴'),
     kpi('主账户交易', String(counts.primary_trade), '实际进入冻结账户'),
     kpi('观察候选', String(counts.observation_candidate), '持仓或暂停期间'),
-    kpi('成交受限', String(counts.entry_unfillable), '容量或价格约束'),
+    kpi('板块背离', String(researchCounts.sector_divergence || 0), '09:36 个股/板块不同步'),
+    kpi('未给回调', String(researchCounts.no_pullback || 0), '10:00前未触达动态支撑'),
+    kpi('前日涨停', String(researchCounts.previous_day_limit_up || 0), '前一交易日收盘封板'),
   ].join('');
   const rows = candidateRows();
+  renderStudySummary();
   $('#candidate-count').textContent = `${rows.length} / ${counts.total}`;
   const statusLabels = {
     primary_trade: '主账户交易',
@@ -1323,7 +1397,8 @@ function renderCandidates() {
   };
   $('#candidate-table').innerHTML = `
     <thead><tr><th>日期</th><th>股票</th><th>排名</th><th>状态</th>
-    <th>09:36确认</th><th>09:37入场</th><th>退出</th><th>持有</th><th>净收益</th></tr></thead>
+    <th>研究标签</th><th>市场 / 板块</th><th>09:36确认</th>
+    <th>09:37入场</th><th>退出</th><th>持有</th><th>净收益</th></tr></thead>
     <tbody>${rows.map((row) => `
       <tr><td>${dayText(row.day)}</td><td>
       <button class="candidate-stock" type="button"
@@ -1332,6 +1407,14 @@ function renderCandidates() {
       </button></td>
       <td>${row.candidate_rank}/${row.basket_size}</td>
       <td><span class="badge ${row.candidate_status}">${statusLabels[row.candidate_status] || row.candidate_status}</span></td>
+      <td>${entryTagsHtml(row)}</td>
+      <td class="market-sector-cell">
+        <strong>${escapeHtml(row.sector_name || '未映射板块')}</strong>
+        <small>热度 ${pct(row.sector_heat_rank_0936)}
+          · 板块 ${signedPct(row.sector_return_0936)}</small>
+        <small>${escapeHtml(row.market_state_label || '')}
+          · 市场 ${signedPct(row.market_mean)}</small>
+      </td>
       <td class="${tone(row.confirmation_return)}">${pct(row.confirmation_return)}</td>
       <td class="candidate-entry ${tone(row.entry_return)}">
         <strong>${pct(row.entry_return)}</strong>
@@ -1363,7 +1446,7 @@ function bind() {
         view.classList.toggle('active', view.id === `view-${button.dataset.view}`));
     });
   });
-  ['#candidate-year', '#candidate-status', '#candidate-result'].forEach((selector) =>
+  ['#candidate-year', '#candidate-status', '#candidate-result', '#candidate-study'].forEach((selector) =>
     $(selector).addEventListener('change', renderCandidates));
   $('#candidate-search').addEventListener('input', renderCandidates);
   $('#initial-capital').addEventListener('input', renderAccount);

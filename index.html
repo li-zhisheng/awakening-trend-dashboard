@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势追涨 · 主策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261102-market">
+  <link rel="stylesheet" href="styles.css?v=20261103-entry-labels">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261102-market" defer></script>
+  <script src="app.js?v=20261103-entry-labels" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -78,7 +78,7 @@
     </section>
 
     <section id="view-candidates" class="view">
-      <div id="candidate-kpis" class="kpi-grid"></div>
+      <div id="candidate-kpis" class="kpi-grid candidate-kpi-grid"></div>
       <div class="toolbar">
         <label>年份<select id="candidate-year">
           <option value="all">全部</option>
@@ -97,9 +97,17 @@
           <option value="profit">盈利</option>
           <option value="loss">亏损</option>
         </select></label>
+        <label>研究标签<select id="candidate-study">
+          <option value="all">全部标签</option>
+          <option value="sector_divergence">板块背离</option>
+          <option value="no_pullback">未给回调</option>
+          <option value="divergence_no_pullback">背离且未回调</option>
+          <option value="previous_limit_up">前日涨停</option>
+        </select></label>
         <label>搜索<input id="candidate-search" type="search" placeholder="代码或名称"></label>
         <span id="candidate-count" class="toolbar-count">--</span>
       </div>
+      <section id="study-summary" class="study-summary"></section>
       <section class="panel">
         <div class="panel-head">
           <div><h2>每日 Top2 候选</h2><p>09:36确认，09:37执行</p></div>
@@ -121,6 +129,7 @@
       <button id="stock-dialog-close" type="button"
               title="关闭" aria-label="关闭">×</button>
     </div>
+    <div id="stock-entry-tags" class="entry-tag-band"></div>
     <div class="market-toolbar">
       <div class="segmented" role="tablist" aria-label="行情周期">
         <button id="stock-daily-tab" class="active" type="button"
@@ -147,6 +156,8 @@
       <div><span>09:37入场</span><strong id="detail-entry">--</strong></div>
       <div><span>退出</span><strong id="detail-exit">--</strong></div>
       <div><span>净收益</span><strong id="detail-return">--</strong></div>
+      <div><span>动态支撑</span><strong id="detail-support">--</strong></div>
+      <div><span>前一交易日</span><strong id="detail-prior-day">--</strong></div>
     </div>
   </dialog>
 </body>
