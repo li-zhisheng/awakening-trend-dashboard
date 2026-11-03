@@ -198,7 +198,7 @@ const signalLabel = (direction, strength) => {
 };
 const entryTagClass = (tag) => {
   if (tag === '板块背离') return 'divergence';
-  if (tag === '未给回调') return 'no-pullback';
+  if (tag === '动态支撑未成交') return 'no-pullback';
   if (tag === '前日涨停' || tag === '前日触板') return 'limit-up';
   return '';
 };
@@ -1308,7 +1308,15 @@ async function openCandidateMarket(row, initialView = 'daily') {
   $('#detail-return').className = tone(row.net_return);
   $('#detail-support').textContent = row.dynamic_support_touched
     ? `${String(row.dynamic_support_entry_clock).padStart(4, '0')} · ¥${Number(row.dynamic_support_price).toFixed(2)} · 低${pct(row.dynamic_support_discount)}`
-    : '10:00前未回调';
+    : [
+        '动态支撑未成交',
+        finiteNumber(row.maximum_pullback_discount)
+          ? `最大回落 ${pct(row.maximum_pullback_discount)}`
+          : '',
+        row.maximum_pullback_clock
+          ? String(row.maximum_pullback_clock).padStart(4, '0')
+          : '',
+      ].filter(Boolean).join(' · ');
   $('#detail-prior-day').textContent = [
     row.previous_day_closed_limit_up ? '涨停' : signedPct(row.previous_day_return),
     Number.isFinite(Number(row.previous_day_amount_ratio))
@@ -1352,10 +1360,16 @@ function candidateRows() {
     if (result === 'profit' && Number(row.net_return) <= 0) return false;
     if (result === 'loss' && Number(row.net_return) >= 0) return false;
     if (study === 'sector_divergence' && !row.sector_divergence) return false;
-    if (study === 'no_pullback' && !row.no_pullback_opportunity) return false;
+    if (
+      study === 'no_pullback'
+      && !(row.dynamic_support_unfilled ?? row.no_pullback_opportunity)
+    ) return false;
     if (
       study === 'divergence_no_pullback'
-      && !(row.sector_divergence && row.no_pullback_opportunity)
+      && !(
+        row.sector_divergence
+        && (row.dynamic_support_unfilled ?? row.no_pullback_opportunity)
+      )
     ) return false;
     if (
       study === 'previous_limit_up'
@@ -1409,7 +1423,11 @@ function renderCandidates() {
     kpi('主账户交易', String(counts.primary_trade), '实际进入冻结账户'),
     kpi('观察候选', String(counts.observation_candidate), '持仓或暂停期间'),
     kpi('板块背离', String(researchCounts.sector_divergence || 0), '09:36 个股/板块不同步'),
-    kpi('未给回调', String(researchCounts.no_pullback || 0), '10:00前未触达动态支撑'),
+    kpi(
+      '支撑未成交',
+      String(researchCounts.no_pullback || 0),
+      '虽有普通回落，10:00前未触动态支撑价',
+    ),
     kpi('前日涨停', String(researchCounts.previous_day_limit_up || 0), '前一交易日收盘封板'),
   ].join('');
   const rows = candidateRows();
