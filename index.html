@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势追涨 · 主策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261103-entry-labels">
+  <link rel="stylesheet" href="styles.css?v=20261103-exit-reasons">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261103-entry-labels" defer></script>
+  <script src="app.js?v=20261103-exit-reasons" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -154,7 +154,10 @@
     <div class="detail-strip">
       <div><span>信号日</span><strong id="detail-signal-day">--</strong></div>
       <div><span>09:37入场</span><strong id="detail-entry">--</strong></div>
-      <div><span>退出</span><strong id="detail-exit">--</strong></div>
+      <div>
+        <span>退出</span><strong id="detail-exit">--</strong>
+        <small id="detail-exit-reason">--</small>
+      </div>
       <div><span>净收益</span><strong id="detail-return">--</strong></div>
       <div><span>动态支撑</span><strong id="detail-support">--</strong></div>
       <div><span>前一交易日</span><strong id="detail-prior-day">--</strong></div>

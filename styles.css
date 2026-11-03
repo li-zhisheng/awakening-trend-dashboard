@@ -279,6 +279,15 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
 .market-sector-cell strong,
 .market-sector-cell small { display: block; }
 .market-sector-cell strong { color: #d5dfe2; font-weight: 600; }
+.candidate-exit { min-width: 170px; }
+.candidate-exit strong,
+.candidate-exit small { display: block; }
+.candidate-exit small {
+  margin-top: 4px;
+  color: #d5b96d;
+  line-height: 1.35;
+  white-space: normal;
+}
 .entry-tag-band {
   min-height: 34px;
   margin-top: 12px;
@@ -415,9 +424,16 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
 .detail-strip div { padding: 13px 18px; border-right: 1px solid var(--line); }
 .detail-strip div:last-child { border-right: 0; }
 .detail-strip span,
-.detail-strip strong { display: block; }
+.detail-strip strong,
+.detail-strip small { display: block; }
 .detail-strip span { margin-bottom: 5px; color: var(--muted); font-size: 11px; }
 .detail-strip strong { font-size: 13px; }
+.detail-strip small {
+  margin-top: 4px;
+  color: #d5b96d;
+  font-size: 11px;
+  line-height: 1.35;
+}
 
 @media (max-width: 980px) {
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

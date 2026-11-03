@@ -206,6 +206,29 @@ const entryTagsHtml = (row) => `
   <span class="entry-tags">${(row.entry_tags || []).map(tag =>
     `<span class="entry-tag ${entryTagClass(tag)}">${escapeHtml(tag)}</span>`
   ).join('')}</span>`;
+const EXIT_REASON_LABELS = {
+  weakness: '09:35弱势',
+  trailing: '最大浮盈回撤',
+  trend_break: '趋势破坏',
+  maximum_hold: '持仓到期',
+  unresolved_exit_total_loss: '退出失败·全损记账',
+};
+const EXIT_REASON_DETAILS = {
+  weakness: '09:35当日跌幅≤-1.5%',
+  trailing: '从持仓最高价回撤≥7%',
+  trend_break: '09:35跌破动态MA5，且个股、市场同时为负',
+  maximum_hold: '持仓达到8个交易日',
+  unresolved_exit_total_loss: '无法完成退出，按全损记账',
+};
+const exitReasonText = (reason, detailed = false) => {
+  const value = String(reason || '');
+  if (!value) return '--';
+  if (value === 'unresolved_exit_total_loss') {
+    return (detailed ? EXIT_REASON_DETAILS : EXIT_REASON_LABELS)[value];
+  }
+  const labels = detailed ? EXIT_REASON_DETAILS : EXIT_REASON_LABELS;
+  return value.split('+').map(item => labels[item] || item).join(' + ');
+};
 
 function roundPriceLimit(value) {
   return Math.floor((Number(value) + 1e-8) * 100 + .5) / 100;
@@ -1279,6 +1302,8 @@ async function openCandidateMarket(row, initialView = 'daily') {
     `${String(row.entry_clock).padStart(4, '0')} · ¥${Number(row.entry_price).toFixed(2)}`;
   $('#detail-exit').textContent =
     `${dayText(row.exit_day)} · ${String(row.exit_clock).padStart(4, '0')}`;
+  $('#detail-exit-reason').textContent =
+    exitReasonText(row.exit_reason, true);
   $('#detail-return').textContent = pct(row.net_return);
   $('#detail-return').className = tone(row.net_return);
   $('#detail-support').textContent = row.dynamic_support_touched
@@ -1398,7 +1423,7 @@ function renderCandidates() {
   $('#candidate-table').innerHTML = `
     <thead><tr><th>日期</th><th>股票</th><th>排名</th><th>状态</th>
     <th>研究标签</th><th>市场 / 板块</th><th>09:36确认</th>
-    <th>09:37入场</th><th>退出</th><th>持有</th><th>净收益</th></tr></thead>
+    <th>09:37入场</th><th>退出 / 原因</th><th>持有</th><th>净收益</th></tr></thead>
     <tbody>${rows.map((row) => `
       <tr><td>${dayText(row.day)}</td><td>
       <button class="candidate-stock" type="button"
@@ -1420,7 +1445,12 @@ function renderCandidates() {
         <strong>${pct(row.entry_return)}</strong>
         <small>¥${Number(row.entry_price).toFixed(2)}</small>
       </td>
-      <td>${dayText(row.exit_day)} ${String(row.exit_clock).padStart(4, '0')}</td>
+      <td class="candidate-exit">
+        <strong>${dayText(row.exit_day)} ${String(row.exit_clock).padStart(4, '0')}</strong>
+        <small title="${escapeHtml(exitReasonText(row.exit_reason, true))}">
+          ${escapeHtml(exitReasonText(row.exit_reason))}
+        </small>
+      </td>
       <td>${row.hold_days}日</td><td class="${tone(row.net_return)}">${pct(row.net_return)}</td></tr>`).join('')}</tbody>`;
   $('#candidate-table').querySelectorAll('.candidate-stock').forEach(
     button => button.addEventListener('click', () => {
