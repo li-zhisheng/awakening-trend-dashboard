@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势追涨 · 主策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261103-full-day-support">
+  <link rel="stylesheet" href="styles.css?v=20261105-live-candidates">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261103-full-day-support" defer></script>
+  <script src="app.js?v=20261105-live-candidates" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -30,6 +30,24 @@
     <button class="active" data-view="account" type="button">模拟账户</button>
     <button data-view="candidates" type="button">候选记录</button>
   </nav>
+
+  <section id="live-banner" class="live-banner" hidden aria-live="polite">
+    <div class="live-head">
+      <div class="live-title">
+        <span id="live-dot" class="live-dot" aria-hidden="true"></span>
+        <h2 id="live-heading">实时候选</h2>
+        <span id="live-status" class="live-chip">--</span>
+      </div>
+      <div class="live-meta">
+        <span id="live-updated">--</span>
+      </div>
+    </div>
+    <div id="live-cards" class="live-cards"></div>
+    <div class="live-foot">
+      <span id="live-market"></span>
+      <span id="live-notice" class="live-notice"></span>
+    </div>
+  </section>
 
   <main>
     <section id="view-account" class="view active">

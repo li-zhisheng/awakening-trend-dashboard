@@ -1559,4 +1559,123 @@ async function start() {
   }
 }
 
+/* ===== 今日实时候选（独立 live_v555.json，非权威，禁止自动下单） ===== */
+const LIVE_STATUS = {
+  shadow_candidates_ready: { label: '实时影子 · 待盘后复核', cls: '' },
+  market_gate_blocked: { label: '市场门未通过 · 今日空仓', cls: 'flat' },
+  shadow_abstain: { label: '09:36确认后无候选 · 今日空仓', cls: 'flat' },
+  verified_match: { label: 'SuperMind 权威复核一致', cls: 'verified' },
+  verified_mismatch: { label: '权威复核不一致 · 以复核为准', cls: 'mismatch' },
+  verified_shadow_missing: { label: '影子信号缺失 · 见权威复核', cls: 'mismatch' },
+};
+let liveTimer = null;
+let liveInFlight = false;
+
+const liveDayText = (value) => {
+  const digits = String(value || '');
+  return digits.length === 8
+    ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+    : digits;
+};
+const liveWan = (value) => (Number.isFinite(Number(value))
+  ? `${(Number(value) / 1e4).toFixed(1)}万` : '--');
+
+function renderLive(payload) {
+  const banner = $('#live-banner');
+  if (!payload || payload.schema !== 'awakening-v555-live-candidates-v1') {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  const meta = LIVE_STATUS[payload.status]
+    || { label: payload.shadow_status || payload.status, cls: 'flat' };
+  $('#live-heading').textContent = `实时候选 · ${liveDayText(payload.date)}`;
+  const chip = $('#live-status');
+  chip.textContent = meta.label;
+  chip.className = `live-chip ${meta.cls}`.trim();
+  $('#live-dot').className = `live-dot ${meta.cls}`.trim();
+
+  const cards = $('#live-cards');
+  if (payload.selected && payload.selected.length) {
+    cards.innerHTML = payload.selected.map((row) => `
+      <article class="live-card">
+        <div class="live-card-top">
+          <span class="live-rank">#${row.rank}</span>
+          <span class="live-code">${escapeHtml(row.code)}</span>
+          <span class="live-name">${escapeHtml(row.name || '')}</span>
+        </div>
+        <div class="live-card-grid">
+          <div class="live-metric"><span>09:35 涨幅</span>
+            <strong class="${tone(row.signal_return)}">${signedPct(row.signal_return)}</strong></div>
+          <div class="live-metric"><span>09:36 确认</span>
+            <strong class="${tone(row.confirmation_return)}">${signedPct(row.confirmation_return)}</strong></div>
+          <div class="live-metric"><span>参考买入价</span>
+            <strong class="live-flat">${finiteNumber(row.indicative_price)
+              ? `¥${Number(row.indicative_price).toFixed(2)}` : '--'}</strong></div>
+          <div class="live-metric"><span>09:36 区间位置</span>
+            <strong class="live-flat">${finiteNumber(row.confirmation_range_position)
+              ? Number(row.confirmation_range_position).toFixed(2) : '--'}</strong></div>
+          <div class="live-metric"><span>09:36 分钟成交额</span>
+            <strong class="live-flat">${liveWan(row.indicative_amount936)}</strong></div>
+          <div class="live-metric"><span>报价时间</span>
+            <strong class="live-flat" style="font-size:12px">${
+              escapeHtml((row.quote_at_0936 || '').replace('T', ' ').slice(0, 16))}</strong></div>
+        </div>
+      </article>`).join('');
+  } else {
+    cards.innerHTML = '<div class="live-empty">今日无候选，按冻结规则空仓，不做交易</div>';
+  }
+
+  const market = payload.market || {};
+  $('#live-market').textContent = market.valid_count == null ? ''
+    : `市场均涨 ${signedPct(market.mean_return)} · 强势比 ${pct(market.strong_ratio)}`
+      + `（${market.strong_count}/${market.valid_count}）`
+      + ` · 初选 ${payload.stages?.before_confirmation ?? '--'}`
+      + ` → 确认 ${payload.stages?.confirmed ?? '--'}`
+      + (payload.verification
+        ? ` · 权威候选：${((payload.verification.authoritative_codes || []).join('、') || '无')}`
+        : '');
+  $('#live-notice').textContent = payload.notice || '';
+  const stamp = payload.published_at || payload.generated_at;
+  $('#live-updated').textContent = stamp
+    ? `信号 ${dateTime(payload.generated_at)} · 发布 ${dateTime(stamp)}` : '';
+}
+
+async function loadLive() {
+  clearTimeout(liveTimer);
+  if (liveInFlight) {
+    scheduleLive();
+    return;
+  }
+  liveInFlight = true;
+  try {
+    const response = await fetch(`live_v555.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (response.ok) renderLive(await response.json());
+  } catch {
+    // 实时区块永不阻断主看板；保留上次内容等待下一轮。
+  } finally {
+    liveInFlight = false;
+    scheduleLive();
+  }
+}
+
+function liveIntervalMs() {
+  const now = new Date();
+  const weekday = now.getDay() >= 1 && now.getDay() <= 5;
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const inWindow = mins >= 9 * 60 + 15 && mins <= 15 * 60 + 10;
+  return weekday && inWindow ? 30000 : 300000;
+}
+function scheduleLive() {
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(loadLive, liveIntervalMs());
+}
+function initLive() {
+  loadLive();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) loadLive();
+  });
+}
+
 start();
+initLive();
