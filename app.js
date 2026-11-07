@@ -1824,6 +1824,7 @@ function renderStrongBoard(resetPage = false) {
   $('#board-execution-rule').textContent = data.strategy.execution_rule;
   $('#board-membership-note').textContent = [
     data.strategy.membership_contract,
+    data.strategy.manual_selection_contract,
     data.input_audit?.source_contract,
     ...(data.input_audit?.date_corrections || [])
       .map(item => item.reason),
@@ -1865,6 +1866,7 @@ function renderStrongBoard(resetPage = false) {
     no_touch: 'board-empty',
     all_excluded: 'board-empty',
     sector_members_incomplete: 'board-missing',
+    historical_sector_changed: 'board-missing',
     sector_untradable: 'board-missing',
     sector_code_unmatched: 'board-missing',
     input_day_invalid: 'board-missing',
