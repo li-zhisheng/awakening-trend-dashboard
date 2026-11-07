@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
-  <title>强势追涨 · 主策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261105-live-candidates">
+  <title>强势策略看板</title>
+  <link rel="stylesheet" href="styles.css?v=20261107-strong-board">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261105-live-candidates" defer></script>
+  <script src="app.js?v=20261107-strong-board" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -29,6 +29,7 @@
   <nav class="view-tabs" aria-label="主策略视图">
     <button class="active" data-view="account" type="button">模拟账户</button>
     <button data-view="candidates" type="button">候选记录</button>
+    <button data-view="limit-board" type="button">强势打板</button>
   </nav>
 
   <section id="live-banner" class="live-banner" hidden aria-live="polite">
@@ -135,6 +136,55 @@
           <table id="candidate-table"></table>
         </div>
       </section>
+    </section>
+
+    <section id="view-limit-board" class="view">
+      <div id="board-kpis" class="kpi-grid board-kpi-grid"></div>
+      <section class="board-contract" aria-label="强势打板策略口径">
+        <div>
+          <span>选股规则</span>
+          <strong id="board-selection-rule">--</strong>
+        </div>
+        <div>
+          <span>并列口径</span>
+          <strong id="board-tie-rule">--</strong>
+        </div>
+        <div>
+          <span>运行模式</span>
+          <strong>影子观察，不自动下单</strong>
+        </div>
+      </section>
+      <div class="toolbar">
+        <label>年份<select id="board-year">
+          <option value="all">全部</option>
+          <option value="2024">2024</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+        </select></label>
+        <label>结果<select id="board-status">
+          <option value="all">全部结果</option>
+          <option value="first_touch">唯一首触板</option>
+          <option value="tie">并列</option>
+          <option value="no_touch">无可交易触板</option>
+          <option value="monitor_missing">监控结果缺失</option>
+        </select></label>
+        <label>搜索<input id="board-search" type="search"
+          placeholder="板块、代码或名称"></label>
+        <span id="board-count" class="toolbar-count">--</span>
+      </div>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>每日最强板块首触板候选</h2>
+            <p>排除竞价即涨停；同一分钟触板全部保留</p>
+          </div>
+          <span id="board-data-state" class="status">--</span>
+        </div>
+        <div class="table-wrap board-table-wrap">
+          <table id="board-table"></table>
+        </div>
+      </section>
+      <p id="board-membership-note" class="data-note"></p>
     </section>
   </main>
 

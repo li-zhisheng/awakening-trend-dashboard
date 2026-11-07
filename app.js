@@ -1489,18 +1489,172 @@ function renderCandidates() {
   $('#sync-state').className = `status ${sync.status === 'ready' ? 'ready' : ''}`;
 }
 
+const boardClock = (value) => {
+  const digits = String(value || '').replaceAll(':', '');
+  if (digits.length === 4) {
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  }
+  if (digits.length === 6) {
+    return `${digits.slice(0, 2)}:${digits.slice(2, 4)}:${digits.slice(4)}`;
+  }
+  return value || '--';
+};
+
+function filteredBoardRows() {
+  const data = DATA.strong_limit_board;
+  if (!data) return [];
+  const year = $('#board-year').value;
+  const status = $('#board-status').value;
+  const search = $('#board-search').value.trim().toLowerCase();
+  return data.rows.filter((row) => {
+    if (year !== 'all' && String(row.year) !== year) return false;
+    if (status !== 'all' && row.status !== status) return false;
+    if (!search) return true;
+    const candidates = (row.candidates || [])
+      .map(item => `${item.code} ${item.name}`).join(' ');
+    return `${row.sector?.code || ''} ${row.sector?.name || ''} ${candidates}`
+      .toLowerCase().includes(search);
+  });
+}
+
+function boardCandidateHtml(candidate, tied) {
+  const sealed = candidate.final_sealed === true
+    ? '<span class="board-seal sealed">收盘封板</span>'
+    : candidate.final_sealed === false
+      ? '<span class="board-seal exploded">当日炸板</span>'
+      : '<span class="board-seal pending">待盘后确认</span>';
+  const bar = finiteNumber(candidate.open)
+    ? `<small>O ${Number(candidate.open).toFixed(2)}
+      · H ${Number(candidate.high).toFixed(2)}
+      · L ${Number(candidate.low).toFixed(2)}
+      · C ${Number(candidate.close).toFixed(2)}</small>`
+    : '';
+  return `<div class="board-candidate">
+    <div>
+      <strong>${escapeHtml(candidate.name)}</strong>
+      <small>${escapeHtml(candidate.code)}</small>
+    </div>
+    <div class="board-candidate-meta">
+      ${tied ? '<span class="badge board-tie">并列</span>' : ''}
+      ${sealed}
+    </div>
+    ${bar}
+  </div>`;
+}
+
+function renderStrongBoard() {
+  const data = DATA.strong_limit_board;
+  if (!data) {
+    $('#board-data-state').textContent = '数据不可用';
+    $('#board-data-state').className = 'status error';
+    $('#board-table').innerHTML = '';
+    return;
+  }
+  const summary = data.summary;
+  $('#board-kpis').innerHTML = [
+    kpi('已知交易日', String(summary.known_days), '仅使用真实归档或人工确认'),
+    kpi('产生候选', String(summary.candidate_days), '排除竞价即涨停'),
+    kpi('唯一首触板', String(summary.unique_days), '分钟内唯一'),
+    kpi('并列交易日', String(summary.tie_days), '保留同分钟全部候选'),
+    kpi('最新日期', dayText(summary.latest_day), '影子模式'),
+  ].join('');
+  $('#board-selection-rule').textContent = data.strategy.selection_rule;
+  $('#board-tie-rule').textContent = data.strategy.tie_rule;
+  $('#board-membership-note').textContent = data.strategy.membership_contract;
+  $('#board-data-state').textContent =
+    `数据校验通过 · ${dateTime(data.generated_at)}`;
+  $('#board-data-state').className = 'status ready';
+
+  const rows = filteredBoardRows();
+  $('#board-count').textContent = `${rows.length} / ${summary.known_days}`;
+  const statusClass = {
+    first_touch: 'board-first',
+    tie: 'board-tie',
+    no_touch: 'board-empty',
+    monitor_missing: 'board-missing',
+    aborted: 'board-missing',
+  };
+  $('#board-table').innerHTML = `
+    <thead><tr><th>日期</th><th>竞价最强板块</th><th>结果</th>
+    <th>首触板时间</th><th>候选股</th><th>涨停价</th>
+    <th>排除竞价涨停</th><th>数据来源</th></tr></thead>
+    <tbody>${rows.map((row) => {
+      const candidates = row.candidates || [];
+      const tied = row.status === 'tie';
+      const openLimit = row.universe?.open_limit_stocks || [];
+      return `<tr>
+        <td data-label="日期">${dayText(row.day)}</td>
+        <td data-label="竞价最强板块" class="board-sector">
+          <strong>${escapeHtml(row.sector?.name || '--')}</strong>
+          <small>${escapeHtml(row.sector?.code || '')}</small>
+        </td>
+        <td data-label="结果"><span class="badge ${statusClass[row.status] || ''}">
+          ${escapeHtml(row.status_label || row.status)}</span></td>
+        <td data-label="首触板时间">
+          <strong>${escapeHtml(boardClock(row.touch_clock))}</strong>
+          <small>${escapeHtml(row.touch_window || '')}</small>
+        </td>
+        <td data-label="候选股" class="board-candidates">${
+          candidates.length
+            ? candidates.map(item => boardCandidateHtml(item, tied)).join('')
+            : '<span class="muted">--</span>'
+        }</td>
+        <td data-label="涨停价">${candidates.map(item =>
+          finiteNumber(item.limit_price)
+            ? `¥${Number(item.limit_price).toFixed(2)}` : '--'
+        ).join('<br>') || '--'}</td>
+        <td data-label="排除竞价涨停">
+          <strong>${openLimit.length}</strong>
+          <small title="${escapeHtml(openLimit.map(item =>
+            `${item.code} ${item.name}`).join('、'))}">${
+              openLimit.length
+                ? escapeHtml(openLimit.map(item => item.name).join('、'))
+                : '--'
+            }</small>
+        </td>
+        <td data-label="数据来源">
+          <strong>${escapeHtml(row.source_label || '--')}</strong>
+          <small>成分 ${escapeHtml(
+            row.sector?.membership_data_date || '当日归档'
+          )}</small>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>`;
+}
+
+function setActiveView(button) {
+  const viewName = button.dataset.view;
+  document.querySelectorAll('[data-view]').forEach((item) =>
+    item.classList.toggle('active', item === button));
+  document.querySelectorAll('.view').forEach((view) =>
+    view.classList.toggle('active', view.id === `view-${viewName}`));
+  const board = viewName === 'limit-board';
+  $('.brand-mark').textContent = board ? '板' : '强';
+  $('.brand h1').textContent = board ? '强势打板' : '强势追涨';
+  $('.eyebrow').textContent = board
+    ? 'AWAKENING / SHADOW STRATEGY'
+    : 'AWAKENING / PRIMARY STRATEGY';
+  $('#strategy-state').textContent = board
+    ? '影子策略 · 不自动下单'
+    : '唯一主策略 · 已冻结';
+  $('#strategy-state').className = 'status ready';
+  if (board) {
+    $('#live-banner').hidden = true;
+  } else {
+    loadLive();
+  }
+}
+
 function bind() {
   document.querySelectorAll('[data-view]').forEach((button) => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('[data-view]').forEach((item) =>
-        item.classList.toggle('active', item === button));
-      document.querySelectorAll('.view').forEach((view) =>
-        view.classList.toggle('active', view.id === `view-${button.dataset.view}`));
-    });
+    button.addEventListener('click', () => setActiveView(button));
   });
   ['#candidate-year', '#candidate-status', '#candidate-result', '#candidate-study'].forEach((selector) =>
     $(selector).addEventListener('change', renderCandidates));
   $('#candidate-search').addEventListener('input', renderCandidates);
+  ['#board-year', '#board-status'].forEach((selector) =>
+    $(selector).addEventListener('change', renderStrongBoard));
+  $('#board-search').addEventListener('input', renderStrongBoard);
   $('#initial-capital').addEventListener('input', renderAccount);
   $('#initial-capital').addEventListener('change', () => {
     const capital = selectedCapital();
@@ -1552,6 +1706,7 @@ async function start() {
     );
     renderAccount();
     renderCandidates();
+    renderStrongBoard();
     bind();
   } catch (error) {
     $('#strategy-state').textContent = `读取失败：${error.message}`;
@@ -1582,6 +1737,10 @@ const liveWan = (value) => (Number.isFinite(Number(value))
 
 function renderLive(payload) {
   const banner = $('#live-banner');
+  if ($('#view-limit-board')?.classList.contains('active')) {
+    banner.hidden = true;
+    return;
+  }
   if (!payload || payload.schema !== 'awakening-v555-live-candidates-v1') {
     banner.hidden = true;
     return;
