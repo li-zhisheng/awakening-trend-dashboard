@@ -6,6 +6,10 @@ let MARKET_CHART = null;
 let BOARD_PAGE = 0;
 const BOARD_PAGE_SIZE = 40;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
+const BOARD_SELECTION_STORAGE_KEY =
+  'awakening.strongLimitBoard.reviewSelections.v1';
+let BOARD_SELECTIONS = { version: 1, updated_at: null, days: {} };
+let BOARD_REVIEW_DAY = null;
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -1491,6 +1495,57 @@ function renderCandidates() {
   $('#sync-state').className = `status ${sync.status === 'ready' ? 'ready' : ''}`;
 }
 
+function loadBoardSelections() {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(BOARD_SELECTION_STORAGE_KEY) || 'null');
+    if (value?.version === 1 && value.days) {
+      BOARD_SELECTIONS = value;
+    }
+  } catch {
+    BOARD_SELECTIONS = { version: 1, updated_at: null, days: {} };
+  }
+}
+
+function boardDaySelections(day) {
+  return BOARD_SELECTIONS.days[String(day)] || [];
+}
+
+function saveBoardSelections() {
+  BOARD_SELECTIONS.updated_at = new Date().toISOString();
+  localStorage.setItem(
+    BOARD_SELECTION_STORAGE_KEY,
+    JSON.stringify(BOARD_SELECTIONS),
+  );
+}
+
+function boardRowByDay(day) {
+  return DATA.strong_limit_board?.rows.find(
+    row => String(row.day) === String(day));
+}
+
+function addBoardSelection(day, candidate) {
+  const key = String(day);
+  const selected = boardDaySelections(key);
+  if (selected.some(item => item.code === candidate.code)) return true;
+  if (selected.length >= 3) return false;
+  BOARD_SELECTIONS.days[key] = [...selected, candidate];
+  saveBoardSelections();
+  return true;
+}
+
+function removeBoardSelection(day, code) {
+  const key = String(day);
+  const selected = boardDaySelections(key)
+    .filter(item => item.code !== code);
+  if (selected.length) {
+    BOARD_SELECTIONS.days[key] = selected;
+  } else {
+    delete BOARD_SELECTIONS.days[key];
+  }
+  saveBoardSelections();
+}
+
 const boardClock = (value) => {
   const digits = String(value || '').replaceAll(':', '');
   if (digits.length === 4) {
@@ -1517,14 +1572,16 @@ function filteredBoardRows() {
     if (seal !== 'all' && seal !== 'has_explosion'
         && row.seal_outcome !== seal) return false;
     if (!search) return true;
-    const candidates = (row.candidates || [])
+    const candidates = (row.review_candidates || row.candidates || [])
       .map(item => `${item.code} ${item.name}`).join(' ');
-    return `${row.sector?.code || ''} ${row.sector?.name || ''} ${candidates}`
+    return `${row.day} ${row.sector?.code || ''} ${
+      row.sector?.name || ''} ${candidates}`
       .toLowerCase().includes(search);
   });
 }
 
-function boardCandidateHtml(candidate, tied) {
+function boardCandidateHtml(candidate, selected = false) {
+  const tied = Number(candidate.minute_tie_count) > 1;
   const sealed = candidate.final_sealed === true
     ? '<span class="board-seal sealed">收盘封板</span>'
     : candidate.final_sealed === false
@@ -1536,10 +1593,13 @@ function boardCandidateHtml(candidate, tied) {
       · L ${Number(candidate.low).toFixed(2)}
       · C ${Number(candidate.close).toFixed(2)}</small>`
     : '';
-  return `<div class="board-candidate">
+  const speed = candidate.speed_rank
+    ? `速度#${candidate.speed_rank} · ${boardClock(candidate.touch_clock)}`
+    : boardClock(candidate.touch_clock);
+  return `<div class="board-candidate ${selected ? 'selected' : ''}">
     <div>
       <strong>${escapeHtml(candidate.name)}</strong>
-      <small>${escapeHtml(candidate.code)}</small>
+      <small>${escapeHtml(candidate.code)} · ${escapeHtml(speed)}</small>
     </div>
     <div class="board-candidate-meta">
       ${tied ? '<span class="badge board-tie">并列</span>' : ''}
@@ -1547,6 +1607,140 @@ function boardCandidateHtml(candidate, tied) {
     </div>
     ${bar}
   </div>`;
+}
+
+function renderBoardReviewDialog(message = '') {
+  const row = boardRowByDay(BOARD_REVIEW_DAY);
+  if (!row) return;
+  const selected = boardDaySelections(row.day);
+  const selectedCodes = new Set(selected.map(item => item.code));
+  const review = row.review_candidates || [];
+  const manual = selected.filter(
+    item => !review.some(candidate => candidate.code === item.code));
+  const options = [...review, ...manual];
+  $('#board-review-title').textContent =
+    `${dayText(row.day)} · ${row.sector?.name || row.sector?.code}`;
+  $('#board-review-meta').textContent =
+    `最快触板候选 ${review.length}只`
+    + (row.universe?.review_boundary_tie_omitted
+      ? ` · 边界同分钟另有${row.universe.review_boundary_tie_omitted}只未展示`
+      : '')
+    + ' · 当前历史成员仅为代理';
+  $('#board-review-count').textContent = `${selected.length} / 3`;
+  $('#board-review-message').textContent = message;
+  $('#board-review-list').innerHTML = options.length
+    ? options.map((candidate) => {
+      const source = candidate.source === 'manual'
+        ? '手工补录'
+        : `速度#${candidate.speed_rank || '--'} · ${
+          boardClock(candidate.touch_clock)}`;
+      return `<label class="board-review-option">
+        <input type="checkbox" data-code="${escapeHtml(candidate.code)}"
+          ${selectedCodes.has(candidate.code) ? 'checked' : ''}>
+        <span>
+          <strong>${escapeHtml(candidate.name || candidate.code)}</strong>
+          <small>${escapeHtml(candidate.code)} · ${escapeHtml(source)}</small>
+        </span>
+        <span class="board-review-result">${
+          candidate.final_sealed === true ? '收盘封板'
+            : candidate.final_sealed === false ? '当日炸板'
+              : '人工补录'
+        }</span>
+      </label>`;
+    }).join('')
+    : '<div class="board-review-empty">当前代理成分未产生候选，可手工补录。</div>';
+  $('#board-review-list').querySelectorAll('input[type="checkbox"]')
+    .forEach(input => input.addEventListener('change', () => {
+      const code = input.dataset.code;
+      if (!input.checked) {
+        removeBoardSelection(row.day, code);
+        renderBoardReviewDialog();
+        renderStrongBoard();
+        return;
+      }
+      const candidate = options.find(item => item.code === code);
+      const added = addBoardSelection(row.day, {
+        code: candidate.code,
+        name: candidate.name || candidate.code,
+        touch_clock: candidate.touch_clock || '',
+        source: candidate.source || 'generated_top5',
+      });
+      renderBoardReviewDialog(
+        added ? '' : '最多选择3只，请先取消一只候选。');
+      renderStrongBoard();
+    }));
+}
+
+function openBoardReview(day) {
+  BOARD_REVIEW_DAY = String(day);
+  renderBoardReviewDialog();
+  $('#board-review-dialog').showModal();
+}
+
+function addManualBoardCandidate() {
+  const row = boardRowByDay(BOARD_REVIEW_DAY);
+  if (!row) return;
+  const code = $('#board-manual-code').value.trim();
+  const name = $('#board-manual-name').value.trim() || code;
+  const touchClock = $('#board-manual-clock').value.trim();
+  if (!/^\d{6}$/.test(code)) {
+    renderBoardReviewDialog('股票代码必须是6位数字。');
+    return;
+  }
+  const generated = (row.review_candidates || [])
+    .find(item => item.code === code);
+  const added = addBoardSelection(row.day, {
+    code,
+    name: generated?.name || name,
+    touch_clock: generated?.touch_clock || touchClock,
+    source: generated ? 'generated_top5' : 'manual',
+  });
+  if (!added) {
+    renderBoardReviewDialog('最多选择3只，请先取消一只候选。');
+    return;
+  }
+  $('#board-manual-code').value = '';
+  $('#board-manual-name').value = '';
+  $('#board-manual-clock').value = '';
+  renderBoardReviewDialog();
+  renderStrongBoard();
+}
+
+const csvValue = value =>
+  `"${String(value ?? '').replaceAll('"', '""')}"`;
+
+function exportBoardSelections() {
+  const lines = [[
+    '日期', '板块代码', '板块名称', '选择顺序',
+    '股票代码', '股票名称', '来源', '触板时间',
+    '强度', '净额状态',
+  ]];
+  Object.keys(BOARD_SELECTIONS.days).sort().forEach((day) => {
+    const row = boardRowByDay(day);
+    boardDaySelections(day).forEach((item, index) => {
+      lines.push([
+        day,
+        row?.sector?.code || '',
+        row?.sector?.name || '',
+        index + 1,
+        item.code,
+        item.name,
+        item.source,
+        item.touch_clock || '',
+        row?.strength ?? '',
+        row?.net_flow ?? '',
+      ]);
+    });
+  });
+  const csv = '\ufeff' + lines.map(
+    line => line.map(csvValue).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob(
+    [csv], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = '强势打板人工选择.csv';
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderStrongBoard(resetPage = false) {
@@ -1645,11 +1839,13 @@ function renderStrongBoard(resetPage = false) {
   };
   $('#board-table').innerHTML = `
     <thead><tr><th>日期</th><th>竞价最强板块</th><th>强度 / 净额</th><th>结果</th>
-    <th>首触板时间</th><th>候选股</th><th>涨停价</th>
+    <th>首触板时间</th><th>最快触板候选池</th><th>涨停价</th>
     <th>排除竞价涨停</th><th>数据来源</th></tr></thead>
     <tbody>${displayRows.map((row) => {
       const candidates = row.candidates || [];
-      const tied = row.status === 'tie';
+      const review = row.review_candidates || candidates;
+      const selected = boardDaySelections(row.day);
+      const selectedCodes = new Set(selected.map(item => item.code));
       const openLimit = row.universe?.open_limit_stocks || [];
       return `<tr>
         <td data-label="日期">${dayText(row.day)}</td>
@@ -1670,12 +1866,20 @@ function renderStrongBoard(resetPage = false) {
           <strong>${escapeHtml(boardClock(row.touch_clock))}</strong>
           <small>${escapeHtml(row.touch_window || '')}</small>
         </td>
-        <td data-label="候选股" class="board-candidates">${
-          candidates.length
-            ? candidates.map(item => boardCandidateHtml(item, tied)).join('')
+        <td data-label="最快触板候选池" class="board-candidates">${
+          review.length
+            ? review.map(item => boardCandidateHtml(
+              item, selectedCodes.has(item.code))).join('')
             : '<span class="muted">--</span>'
-        }</td>
-        <td data-label="涨停价">${candidates.map(item =>
+        }
+          ${row.universe?.review_boundary_tie_omitted
+            ? `<small class="board-review-omitted">同分钟另有${
+              row.universe.review_boundary_tie_omitted}只未展示</small>`
+            : ''}
+          <button class="board-review-button" type="button"
+            data-day="${row.day}">人工选择 ${selected.length}/3</button>
+        </td>
+        <td data-label="涨停价">${review.map(item =>
           finiteNumber(item.limit_price)
             ? `¥${Number(item.limit_price).toFixed(2)}` : '--'
         ).join('<br>') || '--'}</td>
@@ -1699,6 +1903,9 @@ function renderStrongBoard(resetPage = false) {
         </td>
       </tr>`;
     }).join('')}</tbody>`;
+  $('#board-table').querySelectorAll('.board-review-button')
+    .forEach(button => button.addEventListener(
+      'click', () => openBoardReview(button.dataset.day)));
 }
 
 function setActiveView(button) {
@@ -1744,6 +1951,26 @@ function bind() {
     BOARD_PAGE += 1;
     renderStrongBoard();
   });
+  $('#board-export').addEventListener('click', exportBoardSelections);
+  $('#board-review-close').addEventListener(
+    'click', () => $('#board-review-dialog').close());
+  $('#board-review-done').addEventListener(
+    'click', () => $('#board-review-dialog').close());
+  $('#board-review-clear').addEventListener('click', () => {
+    if (!BOARD_REVIEW_DAY) return;
+    delete BOARD_SELECTIONS.days[BOARD_REVIEW_DAY];
+    saveBoardSelections();
+    renderBoardReviewDialog('当日选择已清空。');
+    renderStrongBoard();
+  });
+  $('#board-manual-form').addEventListener('submit', event => {
+    event.preventDefault();
+    addManualBoardCandidate();
+  });
+  $('#board-review-dialog').addEventListener('close', () => {
+    BOARD_REVIEW_DAY = null;
+    $('#board-review-message').textContent = '';
+  });
   $('#initial-capital').addEventListener('input', renderAccount);
   $('#initial-capital').addEventListener('change', () => {
     const capital = selectedCapital();
@@ -1788,6 +2015,7 @@ async function start() {
     $('#strategy-state').textContent = '唯一主策略 · 已冻结';
     $('#strategy-state').className = 'status ready';
     $('#generated-at').textContent = dateTime(DATA.generated_at);
+    loadBoardSelections();
     const savedCapital = Number(localStorage.getItem(CAPITAL_STORAGE_KEY));
     $('#initial-capital').value = String(
       Number.isFinite(savedCapital) && savedCapital > 0

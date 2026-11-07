@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261107-board-v1-invalid">
+  <link rel="stylesheet" href="styles.css?v=20261107-board-review-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261107-board-v1-invalid" defer></script>
+  <script src="app.js?v=20261107-board-review-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -192,6 +192,7 @@
           <button id="board-next" type="button"
             title="下一页" aria-label="下一页">›</button>
         </div>
+        <button id="board-export" type="button">导出人工选择</button>
         <span id="board-count" class="toolbar-count">--</span>
       </div>
       <section id="board-flow-summary"
@@ -253,6 +254,45 @@
       <div><span>净收益</span><strong id="detail-return">--</strong></div>
       <div><span>动态支撑</span><strong id="detail-support">--</strong></div>
       <div><span>前一交易日</span><strong id="detail-prior-day">--</strong></div>
+    </div>
+  </dialog>
+
+  <dialog id="board-review-dialog">
+    <div class="dialog-head">
+      <div>
+        <h2 id="board-review-title">人工选择候选</h2>
+        <p id="board-review-meta">--</p>
+      </div>
+      <button id="board-review-close" type="button"
+              title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div class="board-review-body">
+      <div class="board-review-status">
+        <span>最多选择3只</span>
+        <strong id="board-review-count">0 / 3</strong>
+      </div>
+      <div id="board-review-list" class="board-review-list"></div>
+      <form id="board-manual-form" class="board-manual-form">
+        <div>
+          <label>股票代码
+            <input id="board-manual-code" inputmode="numeric"
+              maxlength="6" placeholder="6位代码" required>
+          </label>
+          <label>股票名称
+            <input id="board-manual-name" placeholder="可选">
+          </label>
+          <label>触板时间
+            <input id="board-manual-clock" maxlength="8"
+              placeholder="HH:MM:SS">
+          </label>
+        </div>
+        <button type="submit">添加候选</button>
+      </form>
+      <p id="board-review-message" class="board-review-message"></p>
+      <div class="board-review-actions">
+        <button id="board-review-clear" type="button">清空当日选择</button>
+        <button id="board-review-done" type="button">完成</button>
+      </div>
     </div>
   </dialog>
 </body>
