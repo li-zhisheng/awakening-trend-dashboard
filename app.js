@@ -1574,13 +1574,13 @@ function renderStrongBoard(resetPage = false) {
     kpi('输入交易日', String(stats.input_days), `${selectedYear === 'all' ? '全部年份' : selectedYear} 有效记录`),
     kpi('候选交易日', String(stats.candidate_days), `${stats.candidate_stocks} 只候选股`),
     kpi(
-      '候选股封板率',
+      '代理候选股封板率',
       pct(stats.candidate_final_seal_rate),
       `${stats.sealed_stocks}/${stats.candidate_stocks} 最终封板`,
       tone(stats.candidate_final_seal_rate),
     ),
     kpi(
-      '交易日封板率',
+      '代理交易日封板率',
       pct(stats.day_any_seal_rate),
       '当日至少一只候选最终封板',
       tone(stats.day_any_seal_rate),
@@ -1600,9 +1600,12 @@ function renderStrongBoard(resetPage = false) {
     ...(data.input_audit?.date_corrections || [])
       .map(item => item.reason),
   ].filter(Boolean).join(' · ');
-  $('#board-data-state').textContent =
-    `数据校验通过 · ${dateTime(data.generated_at)}`;
-  $('#board-data-state').className = 'status ready';
+  const accepted = data.strategy.historical_statistics_accepted !== false;
+  $('#board-data-state').textContent = accepted
+    ? `数据校验通过 · ${dateTime(data.generated_at)}`
+    : `探索性代理 · 禁止作为正式结论 · ${dateTime(data.generated_at)}`;
+  $('#board-data-state').className =
+    `status ${accepted ? 'ready' : 'warning'}`;
 
   const rows = filteredBoardRows();
   if (resetPage) BOARD_PAGE = 0;

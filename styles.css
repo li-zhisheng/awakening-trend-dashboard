@@ -240,6 +240,27 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+.board-validity-warning {
+  margin: -4px 0 14px;
+  padding: 11px 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  border: 1px solid #7d6128;
+  border-radius: 6px;
+  background: #211d14;
+}
+.board-validity-warning strong {
+  color: var(--amber);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.board-validity-warning span {
+  color: #c8b98f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.status.warning { color: var(--amber); }
 .board-table-wrap { max-height: 68vh; }
 .board-table-wrap tbody tr:hover { background: #1c252a; }
 .board-sector strong,
