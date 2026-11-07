@@ -157,7 +157,7 @@
       <div class="toolbar">
         <label>年份<select id="board-year">
           <option value="all">全部</option>
-          <option value="2024">2024</option>
+          <option value="2024" selected>2024</option>
           <option value="2025">2025</option>
           <option value="2026">2026</option>
         </select></label>
@@ -165,13 +165,33 @@
           <option value="all">全部结果</option>
           <option value="first_touch">唯一首触板</option>
           <option value="tie">并列</option>
-          <option value="no_touch">无可交易触板</option>
+          <option value="no_touch">板块内无关注涨停股</option>
+          <option value="all_excluded">全部不可买</option>
+          <option value="sector_members_incomplete">板块成分未完整收录</option>
+          <option value="sector_untradable">板块不可交易</option>
+          <option value="sector_code_unmatched">板块代码无法匹配</option>
           <option value="monitor_missing">监控结果缺失</option>
+        </select></label>
+        <label>封板结果<select id="board-seal">
+          <option value="all">全部</option>
+          <option value="sealed">全部封板</option>
+          <option value="has_explosion">含炸板候选</option>
+          <option value="exploded">全部炸板</option>
+          <option value="not_applicable">无候选</option>
         </select></label>
         <label>搜索<input id="board-search" type="search"
           placeholder="板块、代码或名称"></label>
+        <div class="board-pagination" aria-label="强势打板分页">
+          <button id="board-prev" type="button"
+            title="上一页" aria-label="上一页">‹</button>
+          <span id="board-page">--</span>
+          <button id="board-next" type="button"
+            title="下一页" aria-label="下一页">›</button>
+        </div>
         <span id="board-count" class="toolbar-count">--</span>
       </div>
+      <section id="board-flow-summary"
+        class="study-summary board-flow-summary"></section>
       <section class="panel">
         <div class="panel-head">
           <div>

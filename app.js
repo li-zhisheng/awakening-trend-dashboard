@@ -3,6 +3,8 @@
 let DATA = null;
 let MARKET_STATE = null;
 let MARKET_CHART = null;
+let BOARD_PAGE = 0;
+const BOARD_PAGE_SIZE = 40;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
 
 const $ = (selector) => document.querySelector(selector);
@@ -1505,10 +1507,15 @@ function filteredBoardRows() {
   if (!data) return [];
   const year = $('#board-year').value;
   const status = $('#board-status').value;
+  const seal = $('#board-seal').value;
   const search = $('#board-search').value.trim().toLowerCase();
   return data.rows.filter((row) => {
     if (year !== 'all' && String(row.year) !== year) return false;
     if (status !== 'all' && row.status !== status) return false;
+    if (seal === 'has_explosion'
+        && !['mixed', 'exploded'].includes(row.seal_outcome)) return false;
+    if (seal !== 'all' && seal !== 'has_explosion'
+        && row.seal_outcome !== seal) return false;
     if (!search) return true;
     const candidates = (row.candidates || [])
       .map(item => `${item.code} ${item.name}`).join(' ');
@@ -1542,7 +1549,7 @@ function boardCandidateHtml(candidate, tied) {
   </div>`;
 }
 
-function renderStrongBoard() {
+function renderStrongBoard(resetPage = false) {
   const data = DATA.strong_limit_board;
   if (!data) {
     $('#board-data-state').textContent = '数据不可用';
@@ -1550,35 +1557,94 @@ function renderStrongBoard() {
     $('#board-table').innerHTML = '';
     return;
   }
-  const summary = data.summary;
+  const selectedYear = $('#board-year').value;
+  const stats = selectedYear === 'all'
+    ? data.statistics.overall
+    : data.statistics.by_year[selectedYear] || {
+      input_days: 0,
+      candidate_days: 0,
+      candidate_stocks: 0,
+      sealed_stocks: 0,
+      candidate_final_seal_rate: null,
+      day_any_seal_rate: null,
+      exploded_days: [],
+      status_counts: {},
+    };
   $('#board-kpis').innerHTML = [
-    kpi('已知交易日', String(summary.known_days), '仅使用真实归档或人工确认'),
-    kpi('产生候选', String(summary.candidate_days), '排除竞价即涨停'),
-    kpi('唯一首触板', String(summary.unique_days), '分钟内唯一'),
-    kpi('并列交易日', String(summary.tie_days), '保留同分钟全部候选'),
-    kpi('最新日期', dayText(summary.latest_day), '影子模式'),
+    kpi('输入交易日', String(stats.input_days), `${selectedYear === 'all' ? '全部年份' : selectedYear} 有效记录`),
+    kpi('候选交易日', String(stats.candidate_days), `${stats.candidate_stocks} 只候选股`),
+    kpi(
+      '候选股封板率',
+      pct(stats.candidate_final_seal_rate),
+      `${stats.sealed_stocks}/${stats.candidate_stocks} 最终封板`,
+      tone(stats.candidate_final_seal_rate),
+    ),
+    kpi(
+      '交易日封板率',
+      pct(stats.day_any_seal_rate),
+      '当日至少一只候选最终封板',
+      tone(stats.day_any_seal_rate),
+    ),
+    kpi('含炸板交易日', String((stats.exploded_days || []).length), '包含并列中部分炸板'),
+    kpi(
+      '无法直接统计',
+      String(stats.input_days - stats.candidate_days),
+      '无触板、成分缺失或不可交易',
+    ),
   ].join('');
   $('#board-selection-rule').textContent = data.strategy.selection_rule;
   $('#board-tie-rule').textContent = data.strategy.tie_rule;
-  $('#board-membership-note').textContent = data.strategy.membership_contract;
+  $('#board-membership-note').textContent = [
+    data.strategy.membership_contract,
+    data.input_audit?.source_contract,
+    ...(data.input_audit?.date_corrections || [])
+      .map(item => item.reason),
+  ].filter(Boolean).join(' · ');
   $('#board-data-state').textContent =
     `数据校验通过 · ${dateTime(data.generated_at)}`;
   $('#board-data-state').className = 'status ready';
 
   const rows = filteredBoardRows();
-  $('#board-count').textContent = `${rows.length} / ${summary.known_days}`;
+  if (resetPage) BOARD_PAGE = 0;
+  const totalPages = Math.max(
+    1, Math.ceil(rows.length / BOARD_PAGE_SIZE));
+  BOARD_PAGE = Math.min(BOARD_PAGE, totalPages - 1);
+  const displayRows = rows.slice(
+    BOARD_PAGE * BOARD_PAGE_SIZE,
+    (BOARD_PAGE + 1) * BOARD_PAGE_SIZE,
+  );
+  $('#board-count').textContent = `${rows.length} / ${stats.input_days}`;
+  $('#board-page').textContent = `${BOARD_PAGE + 1} / ${totalPages}`;
+  $('#board-prev').disabled = BOARD_PAGE === 0;
+  $('#board-next').disabled = BOARD_PAGE >= totalPages - 1;
+  $('#board-flow-summary').hidden = !['all', '2024'].includes(selectedYear);
+  $('#board-flow-summary').innerHTML = Object.entries(
+    data.statistics.by_net_flow || {},
+  ).map(([, row]) => `
+    <div>
+      <span>${escapeHtml(row.label)}</span>
+      <strong>股票封板 ${pct(row.candidate_final_seal_rate)}
+        · 日级 ${pct(row.day_any_seal_rate)}</strong>
+      <small>${row.input_days}日输入 · ${row.candidate_days}日有候选
+        · ${row.sealed_stocks}/${row.candidate_stocks}只封板</small>
+    </div>`).join('');
   const statusClass = {
     first_touch: 'board-first',
     tie: 'board-tie',
     no_touch: 'board-empty',
+    all_excluded: 'board-empty',
+    sector_members_incomplete: 'board-missing',
+    sector_untradable: 'board-missing',
+    sector_code_unmatched: 'board-missing',
+    input_day_invalid: 'board-missing',
     monitor_missing: 'board-missing',
     aborted: 'board-missing',
   };
   $('#board-table').innerHTML = `
-    <thead><tr><th>日期</th><th>竞价最强板块</th><th>结果</th>
+    <thead><tr><th>日期</th><th>竞价最强板块</th><th>强度 / 净额</th><th>结果</th>
     <th>首触板时间</th><th>候选股</th><th>涨停价</th>
     <th>排除竞价涨停</th><th>数据来源</th></tr></thead>
-    <tbody>${rows.map((row) => {
+    <tbody>${displayRows.map((row) => {
       const candidates = row.candidates || [];
       const tied = row.status === 'tie';
       const openLimit = row.universe?.open_limit_stocks || [];
@@ -1587,6 +1653,13 @@ function renderStrongBoard() {
         <td data-label="竞价最强板块" class="board-sector">
           <strong>${escapeHtml(row.sector?.name || '--')}</strong>
           <small>${escapeHtml(row.sector?.code || '')}</small>
+        </td>
+        <td data-label="强度 / 净额">
+          <strong>${finiteNumber(row.strength)
+            ? Number(row.strength).toLocaleString('zh-CN') : '--'}</strong>
+          <small class="board-flow-${
+            row.net_flow === 1 ? 'in' : row.net_flow === 0 ? 'out' : 'flat'
+          }">${escapeHtml(row.net_flow_label || '--')}</small>
         </td>
         <td data-label="结果"><span class="badge ${statusClass[row.status] || ''}">
           ${escapeHtml(row.status_label || row.status)}</span></td>
@@ -1617,6 +1690,9 @@ function renderStrongBoard() {
           <small>成分 ${escapeHtml(
             row.sector?.membership_data_date || '当日归档'
           )}</small>
+          ${row.input_correction
+            ? `<small class="input-correction">${escapeHtml(
+              row.input_correction)}</small>` : ''}
         </td>
       </tr>`;
     }).join('')}</tbody>`;
@@ -1652,9 +1728,19 @@ function bind() {
   ['#candidate-year', '#candidate-status', '#candidate-result', '#candidate-study'].forEach((selector) =>
     $(selector).addEventListener('change', renderCandidates));
   $('#candidate-search').addEventListener('input', renderCandidates);
-  ['#board-year', '#board-status'].forEach((selector) =>
-    $(selector).addEventListener('change', renderStrongBoard));
-  $('#board-search').addEventListener('input', renderStrongBoard);
+  ['#board-year', '#board-status', '#board-seal'].forEach((selector) =>
+    $(selector).addEventListener(
+      'change', () => renderStrongBoard(true)));
+  $('#board-search').addEventListener(
+    'input', () => renderStrongBoard(true));
+  $('#board-prev').addEventListener('click', () => {
+    BOARD_PAGE = Math.max(0, BOARD_PAGE - 1);
+    renderStrongBoard();
+  });
+  $('#board-next').addEventListener('click', () => {
+    BOARD_PAGE += 1;
+    renderStrongBoard();
+  });
   $('#initial-capital').addEventListener('input', renderAccount);
   $('#initial-capital').addEventListener('change', () => {
     const capital = selectedCapital();
