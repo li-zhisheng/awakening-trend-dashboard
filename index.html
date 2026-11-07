@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>强势策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261107-board-review-v1">
+  <link rel="stylesheet" href="styles.css?v=20261107-board-review-v2">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261107-board-review-v1" defer></script>
+  <script src="app.js?v=20261107-board-review-v2" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -150,6 +150,10 @@
           <strong id="board-tie-rule">--</strong>
         </div>
         <div>
+          <span>买入顺序</span>
+          <strong id="board-execution-rule">--</strong>
+        </div>
+        <div>
           <span>运行模式</span>
           <strong>影子观察，不自动下单</strong>
         </div>
@@ -268,9 +272,10 @@
     </div>
     <div class="board-review-body">
       <div class="board-review-status">
-        <span>最多选择3只</span>
+        <span>最多选择3只，严格按顺序买入</span>
         <strong id="board-review-count">0 / 3</strong>
       </div>
+      <div id="board-review-order" class="board-review-order"></div>
       <div id="board-review-list" class="board-review-list"></div>
       <form id="board-manual-form" class="board-manual-form">
         <div>

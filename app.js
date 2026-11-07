@@ -1546,6 +1546,17 @@ function removeBoardSelection(day, code) {
   saveBoardSelections();
 }
 
+function moveBoardSelection(day, code, delta) {
+  const key = String(day);
+  const selected = [...boardDaySelections(key)];
+  const index = selected.findIndex(item => item.code === code);
+  const target = index + delta;
+  if (index < 0 || target < 0 || target >= selected.length) return;
+  [selected[index], selected[target]] = [selected[target], selected[index]];
+  BOARD_SELECTIONS.days[key] = selected;
+  saveBoardSelections();
+}
+
 const boardClock = (value) => {
   const digits = String(value || '').replaceAll(':', '');
   if (digits.length === 4) {
@@ -1628,6 +1639,28 @@ function renderBoardReviewDialog(message = '') {
     + ' · 当前历史成员仅为代理';
   $('#board-review-count').textContent = `${selected.length} / 3`;
   $('#board-review-message').textContent = message;
+  $('#board-review-order').innerHTML = selected.length
+    ? selected.map((item, index) => `
+      <div class="board-order-row">
+        <span><b>#${index + 1}</b> ${escapeHtml(item.name)}
+          <small>${escapeHtml(item.code)}</small></span>
+        <div>
+          <button type="button" data-code="${escapeHtml(item.code)}"
+            data-move="-1" ${index === 0 ? 'disabled' : ''}
+            title="前移" aria-label="${escapeHtml(item.name)}前移">↑</button>
+          <button type="button" data-code="${escapeHtml(item.code)}"
+            data-move="1" ${index === selected.length - 1 ? 'disabled' : ''}
+            title="后移" aria-label="${escapeHtml(item.name)}后移">↓</button>
+        </div>
+      </div>`).join('')
+    : '<div class="board-order-empty">按勾选顺序生成买入优先级</div>';
+  $('#board-review-order').querySelectorAll('button[data-move]')
+    .forEach(button => button.addEventListener('click', () => {
+      moveBoardSelection(
+        row.day, button.dataset.code, Number(button.dataset.move));
+      renderBoardReviewDialog();
+      renderStrongBoard();
+    }));
   $('#board-review-list').innerHTML = options.length
     ? options.map((candidate) => {
       const source = candidate.source === 'manual'
@@ -1788,6 +1821,7 @@ function renderStrongBoard(resetPage = false) {
   ].join('');
   $('#board-selection-rule').textContent = data.strategy.selection_rule;
   $('#board-tie-rule').textContent = data.strategy.tie_rule;
+  $('#board-execution-rule').textContent = data.strategy.execution_rule;
   $('#board-membership-note').textContent = [
     data.strategy.membership_contract,
     data.input_audit?.source_contract,
@@ -1875,6 +1909,12 @@ function renderStrongBoard(resetPage = false) {
           ${row.universe?.review_boundary_tie_omitted
             ? `<small class="board-review-omitted">同分钟另有${
               row.universe.review_boundary_tie_omitted}只未展示</small>`
+            : ''}
+          ${selected.length
+            ? `<small class="board-selected-order">买入顺序：${
+              selected.map((item, index) =>
+                `${index + 1}.${escapeHtml(item.name)}`).join(' → ')
+            }</small>`
             : ''}
           <button class="board-review-button" type="button"
             data-day="${row.day}">人工选择 ${selected.length}/3</button>

@@ -216,7 +216,7 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
 }
 .board-contract {
   display: grid;
-  grid-template-columns: 1.2fr 1fr .65fr;
+  grid-template-columns: 1.1fr .8fr 1.25fr .65fr;
   margin-bottom: 14px;
   border: 1px solid #30383d;
   border-radius: 7px;
@@ -348,6 +348,12 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
   color: var(--cyan);
   font-size: 11px;
 }
+.board-selected-order {
+  display: block;
+  margin-top: 7px;
+  color: var(--cyan);
+  line-height: 1.5;
+}
 #board-review-dialog {
   width: min(680px, calc(100vw - 32px));
 }
@@ -364,8 +370,47 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
 }
 .board-review-status span { color: var(--muted); font-size: 12px; }
 .board-review-status strong { color: var(--cyan); }
+.board-review-order {
+  margin-top: 10px;
+  border: 1px solid #30383d;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.board-order-row {
+  min-height: 42px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #283036;
+  background: #12191d;
+}
+.board-order-row:last-child { border-bottom: 0; }
+.board-order-row > span {
+  min-width: 0;
+  font-size: 12px;
+}
+.board-order-row b { color: var(--cyan); }
+.board-order-row small {
+  margin-left: 6px;
+  color: var(--muted);
+}
+.board-order-row > div { display: flex; gap: 5px; }
+.board-order-row button {
+  width: 32px;
+  min-height: 28px;
+  padding: 0;
+}
+.board-order-row button:disabled { opacity: .35; cursor: default; }
+.board-order-empty {
+  padding: 11px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
 .board-review-list {
-  max-height: 42vh;
+  max-height: 32vh;
   margin: 10px 0;
   overflow-y: auto;
   border: 1px solid #30383d;
