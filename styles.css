@@ -288,6 +288,10 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
   border-left: 2px solid var(--cyan);
   background: #17262a;
 }
+.board-candidate.excluded {
+  opacity: .48;
+  text-decoration: line-through;
+}
 .board-candidate > small {
   grid-column: 1 / -1;
   line-height: 1.45;
@@ -420,11 +424,15 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
   min-height: 58px;
   padding: 10px 12px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid #283036;
   cursor: pointer;
+}
+.board-review-option.excluded {
+  background: #201719;
+  opacity: .72;
 }
 .board-review-option:last-child { border-bottom: 0; }
 .board-review-option:hover { background: #192227; }
@@ -434,6 +442,13 @@ td small { display: block; margin-top: 2px; color: #7d8a91; }
 .board-review-option small { display: block; }
 .board-review-option small { margin-top: 3px; color: var(--muted); }
 .board-review-result { color: #b8c3c7; font-size: 11px; }
+.board-exclude-button {
+  min-height: 30px;
+  padding: 0 8px;
+  border-color: #765057;
+  color: #e09199;
+  font-size: 10px;
+}
 .board-review-empty {
   padding: 18px;
   color: var(--muted);

@@ -8,7 +8,9 @@ const BOARD_PAGE_SIZE = 40;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
 const BOARD_SELECTION_STORAGE_KEY =
   'awakening.strongLimitBoard.reviewSelections.v1';
-let BOARD_SELECTIONS = { version: 1, updated_at: null, days: {} };
+let BOARD_SELECTIONS = {
+  version: 1, updated_at: null, days: {}, exclusions: {},
+};
 let BOARD_REVIEW_DAY = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -1501,14 +1503,21 @@ function loadBoardSelections() {
       localStorage.getItem(BOARD_SELECTION_STORAGE_KEY) || 'null');
     if (value?.version === 1 && value.days) {
       BOARD_SELECTIONS = value;
+      BOARD_SELECTIONS.exclusions ||= {};
     }
   } catch {
-    BOARD_SELECTIONS = { version: 1, updated_at: null, days: {} };
+    BOARD_SELECTIONS = {
+      version: 1, updated_at: null, days: {}, exclusions: {},
+    };
   }
 }
 
 function boardDaySelections(day) {
   return BOARD_SELECTIONS.days[String(day)] || [];
+}
+
+function boardDayExclusions(day) {
+  return BOARD_SELECTIONS.exclusions[String(day)] || [];
 }
 
 function saveBoardSelections() {
@@ -1532,6 +1541,33 @@ function addBoardSelection(day, candidate) {
   BOARD_SELECTIONS.days[key] = [...selected, candidate];
   saveBoardSelections();
   return true;
+}
+
+function excludeBoardCandidate(day, candidate) {
+  const key = String(day);
+  removeBoardSelection(key, candidate.code);
+  const excluded = boardDayExclusions(key);
+  if (!excluded.some(item => item.code === candidate.code)) {
+    BOARD_SELECTIONS.exclusions[key] = [...excluded, {
+      code: candidate.code,
+      name: candidate.name || candidate.code,
+      reason: "当日不属于该板块",
+      source: "generated_top5",
+    }];
+  }
+  saveBoardSelections();
+}
+
+function restoreBoardCandidate(day, code) {
+  const key = String(day);
+  const excluded = boardDayExclusions(key)
+    .filter(item => item.code !== code);
+  if (excluded.length) {
+    BOARD_SELECTIONS.exclusions[key] = excluded;
+  } else {
+    delete BOARD_SELECTIONS.exclusions[key];
+  }
+  saveBoardSelections();
 }
 
 function removeBoardSelection(day, code) {
@@ -1591,7 +1627,11 @@ function filteredBoardRows() {
   });
 }
 
-function boardCandidateHtml(candidate, selected = false) {
+function boardCandidateHtml(
+  candidate,
+  selected = false,
+  excluded = false,
+) {
   const tied = Number(candidate.minute_tie_count) > 1;
   const sealed = candidate.final_sealed === true
     ? '<span class="board-seal sealed">收盘封板</span>'
@@ -1607,12 +1647,14 @@ function boardCandidateHtml(candidate, selected = false) {
   const speed = candidate.speed_rank
     ? `速度#${candidate.speed_rank} · ${boardClock(candidate.touch_clock)}`
     : boardClock(candidate.touch_clock);
-  return `<div class="board-candidate ${selected ? 'selected' : ''}">
+  return `<div class="board-candidate ${selected ? 'selected' : ''} ${
+    excluded ? 'excluded' : ''}">
     <div>
       <strong>${escapeHtml(candidate.name)}</strong>
       <small>${escapeHtml(candidate.code)} · ${escapeHtml(speed)}</small>
     </div>
     <div class="board-candidate-meta">
+      ${excluded ? '<span class="badge board-missing">不属于当日板块</span>' : ''}
       ${tied ? '<span class="badge board-tie">并列</span>' : ''}
       ${sealed}
     </div>
@@ -1625,6 +1667,8 @@ function renderBoardReviewDialog(message = '') {
   if (!row) return;
   const selected = boardDaySelections(row.day);
   const selectedCodes = new Set(selected.map(item => item.code));
+  const excluded = boardDayExclusions(row.day);
+  const excludedCodes = new Set(excluded.map(item => item.code));
   const review = row.review_candidates || [];
   const manual = selected.filter(
     item => !review.some(candidate => candidate.code === item.code));
@@ -1667,9 +1711,12 @@ function renderBoardReviewDialog(message = '') {
         ? '手工补录'
         : `速度#${candidate.speed_rank || '--'} · ${
           boardClock(candidate.touch_clock)}`;
-      return `<label class="board-review-option">
+      const isExcluded = excludedCodes.has(candidate.code);
+      return `<div class="board-review-option ${
+        isExcluded ? 'excluded' : ''}">
         <input type="checkbox" data-code="${escapeHtml(candidate.code)}"
-          ${selectedCodes.has(candidate.code) ? 'checked' : ''}>
+          ${selectedCodes.has(candidate.code) ? 'checked' : ''}
+          ${isExcluded ? 'disabled' : ''}>
         <span>
           <strong>${escapeHtml(candidate.name || candidate.code)}</strong>
           <small>${escapeHtml(candidate.code)} · ${escapeHtml(source)}</small>
@@ -1679,7 +1726,12 @@ function renderBoardReviewDialog(message = '') {
             : candidate.final_sealed === false ? '当日炸板'
               : '人工补录'
         }</span>
-      </label>`;
+        ${candidate.source === 'manual' ? '' : `
+          <button class="board-exclude-button" type="button"
+            data-code="${escapeHtml(candidate.code)}">${
+              isExcluded ? '撤销剔除' : '不属于板块'
+            }</button>`}
+      </div>`;
     }).join('')
     : '<div class="board-review-empty">当前代理成分未产生候选，可手工补录。</div>';
   $('#board-review-list').querySelectorAll('input[type="checkbox"]')
@@ -1702,6 +1754,20 @@ function renderBoardReviewDialog(message = '') {
         added ? '' : '最多选择3只，请先取消一只候选。');
       renderStrongBoard();
     }));
+  $('#board-review-list').querySelectorAll('.board-exclude-button')
+    .forEach(button => button.addEventListener('click', () => {
+      const candidate = review.find(
+        item => item.code === button.dataset.code);
+      if (!candidate) return;
+      if (excludedCodes.has(candidate.code)) {
+        restoreBoardCandidate(row.day, candidate.code);
+        renderBoardReviewDialog('已撤销剔除。');
+      } else {
+        excludeBoardCandidate(row.day, candidate);
+        renderBoardReviewDialog('已记录：当日不属于该板块。');
+      }
+      renderStrongBoard();
+    }));
 }
 
 function openBoardReview(day) {
@@ -1722,6 +1788,7 @@ function addManualBoardCandidate() {
   }
   const generated = (row.review_candidates || [])
     .find(item => item.code === code);
+  restoreBoardCandidate(row.day, code);
   const added = addBoardSelection(row.day, {
     code,
     name: generated?.name || name,
@@ -1744,22 +1811,44 @@ const csvValue = value =>
 
 function exportBoardSelections() {
   const lines = [[
-    '日期', '板块代码', '板块名称', '选择顺序',
-    '股票代码', '股票名称', '来源', '触板时间',
+    '日期', '板块代码', '板块名称', '记录类型', '选择顺序',
+    '股票代码', '股票名称', '来源', '触板时间', '剔除原因',
     '强度', '净额状态',
   ]];
-  Object.keys(BOARD_SELECTIONS.days).sort().forEach((day) => {
+  const days = new Set([
+    ...Object.keys(BOARD_SELECTIONS.days),
+    ...Object.keys(BOARD_SELECTIONS.exclusions),
+  ]);
+  [...days].sort().forEach((day) => {
     const row = boardRowByDay(day);
     boardDaySelections(day).forEach((item, index) => {
       lines.push([
         day,
         row?.sector?.code || '',
         row?.sector?.name || '',
+        '买入候选',
         index + 1,
         item.code,
         item.name,
         item.source,
         item.touch_clock || '',
+        '',
+        row?.strength ?? '',
+        row?.net_flow ?? '',
+      ]);
+    });
+    boardDayExclusions(day).forEach((item) => {
+      lines.push([
+        day,
+        row?.sector?.code || '',
+        row?.sector?.name || '',
+        '剔除',
+        '',
+        item.code,
+        item.name,
+        item.source,
+        '',
+        item.reason,
         row?.strength ?? '',
         row?.net_flow ?? '',
       ]);
@@ -1882,6 +1971,8 @@ function renderStrongBoard(resetPage = false) {
       const review = row.review_candidates || candidates;
       const selected = boardDaySelections(row.day);
       const selectedCodes = new Set(selected.map(item => item.code));
+      const excluded = boardDayExclusions(row.day);
+      const excludedCodes = new Set(excluded.map(item => item.code));
       const openLimit = row.universe?.open_limit_stocks || [];
       return `<tr>
         <td data-label="日期">${dayText(row.day)}</td>
@@ -1905,7 +1996,10 @@ function renderStrongBoard(resetPage = false) {
         <td data-label="最快触板候选池" class="board-candidates">${
           review.length
             ? review.map(item => boardCandidateHtml(
-              item, selectedCodes.has(item.code))).join('')
+              item,
+              selectedCodes.has(item.code),
+              excludedCodes.has(item.code),
+            )).join('')
             : '<span class="muted">--</span>'
         }
           ${row.universe?.review_boundary_tie_omitted
@@ -1919,7 +2013,8 @@ function renderStrongBoard(resetPage = false) {
             }</small>`
             : ''}
           <button class="board-review-button" type="button"
-            data-day="${row.day}">人工选择 ${selected.length}/3</button>
+            data-day="${row.day}">人工选择 ${selected.length}/3
+            · 已剔除${excluded.length}</button>
         </td>
         <td data-label="涨停价">${review.map(item =>
           finiteNumber(item.limit_price)
@@ -2001,8 +2096,9 @@ function bind() {
   $('#board-review-clear').addEventListener('click', () => {
     if (!BOARD_REVIEW_DAY) return;
     delete BOARD_SELECTIONS.days[BOARD_REVIEW_DAY];
+    delete BOARD_SELECTIONS.exclusions[BOARD_REVIEW_DAY];
     saveBoardSelections();
-    renderBoardReviewDialog('当日选择已清空。');
+    renderBoardReviewDialog('当日人工记录已清空。');
     renderStrongBoard();
   });
   $('#board-manual-form').addEventListener('submit', event => {
