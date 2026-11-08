@@ -841,14 +841,21 @@ function normalizedMinutePoints(minute) {
 function availableMinuteDates(state = MARKET_STATE) {
   if (!state?.daily) return [];
   const local = new Set();
+  const barDays = (state.daily.bars || [])
+    .map(item => compactDay(item[0]));
   for (const selection of state.daily.selections || []) {
-    local.add(compactDay(selection.day));
-    local.add(compactDay(selection.exit_day));
+    const start = compactDay(selection.day);
+    const end = compactDay(selection.exit_day);
+    local.add(start);
+    if (end) {
+      for (const day of barDays) {
+        if (day >= start && day <= end) local.add(day);
+      }
+    }
   }
   return [
     ...new Set(
-      (state.daily.bars || [])
-        .map(item => compactDay(item[0]))
+      barDays
         .filter(day => day.startsWith('2026') || local.has(day)),
     ),
   ].sort();
