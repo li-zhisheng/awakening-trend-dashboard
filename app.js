@@ -1562,6 +1562,7 @@ const reviewModeLabel = row => (
 );
 
 function reviewDataForDay(day) {
+  const dayStatus = DATA.review_day_status?.[day] || {};
   const historicalRecommendations = (
     DATA.historical_recommendations || []
   ).filter(row => compactDay(row.day) === day);
@@ -1592,6 +1593,7 @@ function reviewDataForDay(day) {
     return {
       recommendations: historicalRecommendations,
       candidates,
+      dayStatus,
       live: false,
     };
   }
@@ -1640,7 +1642,29 @@ function reviewDataForDay(day) {
     net_return: null,
     market_available: false,
   }] : [];
-  return { recommendations, candidates, live: true };
+  return {
+    recommendations,
+    candidates,
+    dayStatus: {
+      v555: {
+        status: candidates.some(
+          row => row.mode_id === 'v555_continuation'
+        ) ? 'candidates_ready' : 'no_confirmed_candidate',
+        detail: candidates.some(
+          row => row.mode_id === 'v555_continuation'
+        ) ? '实时V555候选已生成' : '实时V555无确认候选',
+      },
+      strongest_sector: {
+        status: candidates.some(
+          row => row.mode_id === 'strongest_sector_complement'
+        ) ? 'candidate_ready' : 'unavailable',
+        detail: candidates.some(
+          row => row.mode_id === 'strongest_sector_complement'
+        ) ? '实时最强竞价候选已生成' : '实时最强竞价候选不可用',
+      },
+    },
+    live: true,
+  };
 }
 
 function refreshReviewDates(preferLive = false) {
@@ -1689,7 +1713,7 @@ function renderDailyReview() {
   REVIEW_CURRENT = data;
   const recommendations = data.recommendations;
   const candidates = data.candidates;
-  const modes = new Set(candidates.map(row => row.mode_id).filter(Boolean));
+  const dayStatus = data.dayStatus || {};
   $('#review-day-title').textContent =
     `${dayText(day)}${data.live ? ' · 实时' : ''}`;
   const winner = recommendations[0];
@@ -1702,9 +1726,7 @@ function renderDailyReview() {
       winner ? 'profit' : '',
     ),
     kpi('模式匹配', String(candidates.length), '当日全部候选'),
-    kpi('策略模式', String(modes.size), [...modes].map(mode =>
-      mode === 'strongest_sector_complement'
-        ? '最强竞价' : 'V555').join(' + ') || '--'),
+    kpi('策略检查', '2路', 'V555 + 最强竞价'),
     kpi(
       '推荐结果',
       winner && finiteNumber(winner.net_return)
@@ -1735,10 +1757,26 @@ function renderDailyReview() {
           finiteNumber(row.net_return) ? signedPct(row.net_return) : '--'
         }</td></tr>`).join('')}</tbody>`
     : '<tbody><tr><td>当日没有最终推荐，保持空仓</td></tr></tbody>';
-  $('#review-candidates').innerHTML = candidates.length
-    ? `<thead><tr><th>股票</th><th>模式</th><th>排名 / 状态</th>
+  const candidateModes = new Set(
+    candidates.map(row => row.mode_id).filter(Boolean)
+  );
+  const statusRows = [];
+  if (!candidateModes.has('v555_continuation')) {
+    statusRows.push({
+      label: 'V555强势追涨',
+      detail: dayStatus.v555?.detail || '当日无确认候选',
+    });
+  }
+  if (!candidateModes.has('strongest_sector_complement')) {
+    statusRows.push({
+      label: '最强竞价板块独立候选',
+      detail: dayStatus.strongest_sector?.detail || '当日无有效候选',
+    });
+  }
+  $('#review-candidates').innerHTML = `
+    <thead><tr><th>股票</th><th>模式</th><th>排名 / 状态</th>
       <th>信号时间</th><th>参考价格</th></tr></thead>
-      <tbody>${candidates.map(row => `<tr>
+    <tbody>${candidates.map(row => `<tr>
         <td>${reviewStockButton(row, 'candidate')}</td>
         <td><span class="mode-badge">${
           escapeHtml(reviewModeLabel(row))}</span></td>
@@ -1756,8 +1794,13 @@ function renderDailyReview() {
                 row.signal_price ?? row.entry_price
               ).toFixed(2)}`
               : '--'
-          }</td></tr>`).join('')}</tbody>`
-    : '<tbody><tr><td>当日没有符合模式的候选股</td></tr></tbody>';
+          }</td></tr>`).join('')}${
+      statusRows.map(row => `<tr class="strategy-status-row">
+        <td>--</td>
+        <td><span class="mode-badge">${escapeHtml(row.label)}</span></td>
+        <td colspan="3">${escapeHtml(row.detail)}</td>
+      </tr>`).join('')
+    }</tbody>`;
   document.querySelectorAll('.review-stock:not([disabled])').forEach(
     button => button.addEventListener('click', () => {
       const source = button.dataset.role === 'recommendation'

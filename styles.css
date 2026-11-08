@@ -888,6 +888,10 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: var(--muted);
   font-size: 12px;
 }
+.strategy-status-row td {
+  color: var(--muted);
+  background: rgba(148, 163, 168, 0.04);
+}
 
 @media (max-width: 860px) {
   .live-cards { grid-template-columns: 1fr; }
