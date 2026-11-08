@@ -1967,9 +1967,17 @@ function renderLive(payload) {
     finalBox.innerHTML = '<strong>最终建议</strong><span>空仓</span>'
       + '<small>候选未通过完整门控</small>';
   }
-  const v555Candidates = (payload.selected || []).map((row) => ({
+  const selectedV555 = payload.selected || [];
+  const v555Candidates = selectedV555.length
+    ? selectedV555.map((row) => ({
     ...row, candidate_source: 'v555',
-  }));
+    })) : [{
+      candidate_source: 'v555',
+      rank: 1,
+      unavailable: true,
+      unavailable_reason: payload.market?.gate_passed
+        ? '09:36确认后无候选' : '市场门未通过',
+    }];
   const sectorNode = payload.sector_candidate || {};
   const sectorCandidate = sectorNode.candidate
     ? [{
@@ -1979,11 +1987,29 @@ function renderLive(payload) {
       sector_name: sectorNode.sector?.name || '',
       gate_passed: Boolean(sectorNode.gate_passed),
       indicative_price: sectorNode.candidate.price_0936,
-    }] : [];
+    }] : [{
+      candidate_source: 'strongest_sector',
+      rank: 1,
+      unavailable: true,
+      sector_name: sectorNode.sector?.name || '',
+      unavailable_reason: (sectorNode.reasons || []).join('、')
+        || '当前无有效候选',
+    }];
   const candidates = [...v555Candidates, ...sectorCandidate];
   const cards = $('#live-cards');
   if (candidates.length) {
     cards.innerHTML = candidates.map((row) => {
+      if (row.unavailable) {
+        const sourceLabel = row.candidate_source === 'v555'
+          ? 'V555 独立候选' : '最强竞价板块独立候选';
+        return `<article class="live-card unavailable">
+          <div class="live-card-top">
+            <span class="live-rank">${sourceLabel}</span>
+          </div>
+          <div class="live-unavailable">本路暂无候选</div>
+          <div class="live-gate">${escapeHtml(row.unavailable_reason)}</div>
+        </article>`;
+      }
       const chosen = final.status === 'recommended'
         && String(finalCandidate.code) === String(row.code)
         && (
