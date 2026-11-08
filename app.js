@@ -1572,8 +1572,14 @@ function reviewDataForDay(day) {
       mode_id: row.mode_id || 'v555_continuation',
       mode_label: row.mode_label || 'V555强势追涨',
     }));
+  const parallelCandidates = (
+    DATA.parallel_candidate_rows || []
+  ).filter(row => compactDay(row.day) === day);
   if (!LIVE_DATA || compactDay(LIVE_DATA.date) !== day) {
-    const candidates = [...historicalCandidates];
+    const candidates = [
+      ...historicalCandidates,
+      ...parallelCandidates,
+    ];
     historicalRecommendations.forEach(row => {
       if (!candidates.some(item => item.code === row.code)) {
         candidates.push({
