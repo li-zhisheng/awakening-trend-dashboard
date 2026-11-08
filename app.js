@@ -3,15 +3,7 @@
 let DATA = null;
 let MARKET_STATE = null;
 let MARKET_CHART = null;
-let BOARD_PAGE = 0;
-const BOARD_PAGE_SIZE = 40;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
-const BOARD_SELECTION_STORAGE_KEY =
-  'awakening.strongLimitBoard.reviewSelections.v1';
-let BOARD_SELECTIONS = {
-  version: 1, updated_at: null, days: {}, exclusions: {},
-};
-let BOARD_REVIEW_DAY = null;
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -1497,552 +1489,50 @@ function renderCandidates() {
   $('#sync-state').className = `status ${sync.status === 'ready' ? 'ready' : ''}`;
 }
 
-function loadBoardSelections() {
-  try {
-    const value = JSON.parse(
-      localStorage.getItem(BOARD_SELECTION_STORAGE_KEY) || 'null');
-    if (value?.version === 1 && value.days) {
-      BOARD_SELECTIONS = value;
-      BOARD_SELECTIONS.exclusions ||= {};
-    }
-  } catch {
-    BOARD_SELECTIONS = {
-      version: 1, updated_at: null, days: {}, exclusions: {},
-    };
-  }
-}
-
-function boardDaySelections(day) {
-  return BOARD_SELECTIONS.days[String(day)] || [];
-}
-
-function boardDayExclusions(day) {
-  return BOARD_SELECTIONS.exclusions[String(day)] || [];
-}
-
-function saveBoardSelections() {
-  BOARD_SELECTIONS.updated_at = new Date().toISOString();
-  localStorage.setItem(
-    BOARD_SELECTION_STORAGE_KEY,
-    JSON.stringify(BOARD_SELECTIONS),
-  );
-}
-
-function boardRowByDay(day) {
-  return DATA.strong_limit_board?.rows.find(
-    row => String(row.day) === String(day));
-}
-
-function addBoardSelection(day, candidate) {
-  const key = String(day);
-  const selected = boardDaySelections(key);
-  if (selected.some(item => item.code === candidate.code)) return true;
-  if (selected.length >= 3) return false;
-  BOARD_SELECTIONS.days[key] = [...selected, candidate];
-  saveBoardSelections();
-  return true;
-}
-
-function excludeBoardCandidate(day, candidate) {
-  const key = String(day);
-  removeBoardSelection(key, candidate.code);
-  const excluded = boardDayExclusions(key);
-  if (!excluded.some(item => item.code === candidate.code)) {
-    BOARD_SELECTIONS.exclusions[key] = [...excluded, {
-      code: candidate.code,
-      name: candidate.name || candidate.code,
-      reason: "当日不属于该板块",
-      source: "generated_top5",
-    }];
-  }
-  saveBoardSelections();
-}
-
-function restoreBoardCandidate(day, code) {
-  const key = String(day);
-  const excluded = boardDayExclusions(key)
-    .filter(item => item.code !== code);
-  if (excluded.length) {
-    BOARD_SELECTIONS.exclusions[key] = excluded;
-  } else {
-    delete BOARD_SELECTIONS.exclusions[key];
-  }
-  saveBoardSelections();
-}
-
-function removeBoardSelection(day, code) {
-  const key = String(day);
-  const selected = boardDaySelections(key)
-    .filter(item => item.code !== code);
-  if (selected.length) {
-    BOARD_SELECTIONS.days[key] = selected;
-  } else {
-    delete BOARD_SELECTIONS.days[key];
-  }
-  saveBoardSelections();
-}
-
-function moveBoardSelection(day, code, delta) {
-  const key = String(day);
-  const selected = [...boardDaySelections(key)];
-  const index = selected.findIndex(item => item.code === code);
-  const target = index + delta;
-  if (index < 0 || target < 0 || target >= selected.length) return;
-  [selected[index], selected[target]] = [selected[target], selected[index]];
-  BOARD_SELECTIONS.days[key] = selected;
-  saveBoardSelections();
-}
-
-const boardClock = (value) => {
-  const digits = String(value || '').replaceAll(':', '');
-  if (digits.length === 4) {
-    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-  }
-  if (digits.length === 6) {
-    return `${digits.slice(0, 2)}:${digits.slice(2, 4)}:${digits.slice(4)}`;
-  }
-  return value || '--';
-};
-
-function filteredBoardRows() {
-  const data = DATA.strong_limit_board;
-  if (!data) return [];
-  const year = $('#board-year').value;
-  const status = $('#board-status').value;
-  const seal = $('#board-seal').value;
-  const search = $('#board-search').value.trim().toLowerCase();
-  return data.rows.filter((row) => {
-    if (year !== 'all' && String(row.year) !== year) return false;
-    if (status !== 'all' && row.status !== status) return false;
-    if (seal === 'has_explosion'
-        && !['mixed', 'exploded'].includes(row.seal_outcome)) return false;
-    if (seal !== 'all' && seal !== 'has_explosion'
-        && row.seal_outcome !== seal) return false;
-    if (!search) return true;
-    const candidates = (row.review_candidates || row.candidates || [])
-      .map(item => `${item.code} ${item.name}`).join(' ');
-    return `${row.day} ${row.sector?.code || ''} ${
-      row.sector?.name || ''} ${candidates}`
-      .toLowerCase().includes(search);
-  });
-}
-
-function boardCandidateHtml(
-  candidate,
-  selected = false,
-  excluded = false,
-) {
-  const tied = Number(candidate.minute_tie_count) > 1;
-  const sealed = candidate.final_sealed === true
-    ? '<span class="board-seal sealed">收盘封板</span>'
-    : candidate.final_sealed === false
-      ? '<span class="board-seal exploded">当日炸板</span>'
-      : '<span class="board-seal pending">待盘后确认</span>';
-  const bar = finiteNumber(candidate.open)
-    ? `<small>O ${Number(candidate.open).toFixed(2)}
-      · H ${Number(candidate.high).toFixed(2)}
-      · L ${Number(candidate.low).toFixed(2)}
-      · C ${Number(candidate.close).toFixed(2)}</small>`
-    : '';
-  const speed = candidate.speed_rank
-    ? `速度#${candidate.speed_rank} · ${boardClock(candidate.touch_clock)}`
-    : boardClock(candidate.touch_clock);
-  return `<div class="board-candidate ${selected ? 'selected' : ''} ${
-    excluded ? 'excluded' : ''}">
-    <div>
-      <strong>${escapeHtml(candidate.name)}</strong>
-      <small>${escapeHtml(candidate.code)} · ${escapeHtml(speed)}</small>
-    </div>
-    <div class="board-candidate-meta">
-      ${excluded ? '<span class="badge board-missing">不属于当日板块</span>' : ''}
-      ${tied ? '<span class="badge board-tie">并列</span>' : ''}
-      ${sealed}
-    </div>
-    ${bar}
-  </div>`;
-}
-
-function renderBoardReviewDialog(message = '') {
-  const row = boardRowByDay(BOARD_REVIEW_DAY);
-  if (!row) return;
-  const selected = boardDaySelections(row.day);
-  const selectedCodes = new Set(selected.map(item => item.code));
-  const excluded = boardDayExclusions(row.day);
-  const excludedCodes = new Set(excluded.map(item => item.code));
-  const review = row.review_candidates || [];
-  const manual = selected.filter(
-    item => !review.some(candidate => candidate.code === item.code));
-  const options = [...review, ...manual];
-  $('#board-review-title').textContent =
-    `${dayText(row.day)} · ${row.sector?.name || row.sector?.code}`;
-  $('#board-review-meta').textContent =
-    `最快触板候选 ${review.length}只`
-    + (row.universe?.review_boundary_tie_omitted
-      ? ` · 边界同分钟另有${row.universe.review_boundary_tie_omitted}只未展示`
-      : '')
-    + ' · 当前历史成员仅为代理';
-  $('#board-review-count').textContent = `${selected.length} / 3`;
-  $('#board-review-message').textContent = message;
-  $('#board-review-order').innerHTML = selected.length
-    ? selected.map((item, index) => `
-      <div class="board-order-row">
-        <span><b>#${index + 1}</b> ${escapeHtml(item.name)}
-          <small>${escapeHtml(item.code)}</small></span>
-        <div>
-          <button type="button" data-code="${escapeHtml(item.code)}"
-            data-move="-1" ${index === 0 ? 'disabled' : ''}
-            title="前移" aria-label="${escapeHtml(item.name)}前移">↑</button>
-          <button type="button" data-code="${escapeHtml(item.code)}"
-            data-move="1" ${index === selected.length - 1 ? 'disabled' : ''}
-            title="后移" aria-label="${escapeHtml(item.name)}后移">↓</button>
-        </div>
-      </div>`).join('')
-    : '<div class="board-order-empty">按勾选顺序生成买入优先级</div>';
-  $('#board-review-order').querySelectorAll('button[data-move]')
-    .forEach(button => button.addEventListener('click', () => {
-      moveBoardSelection(
-        row.day, button.dataset.code, Number(button.dataset.move));
-      renderBoardReviewDialog();
-      renderStrongBoard();
-    }));
-  $('#board-review-list').innerHTML = options.length
-    ? options.map((candidate) => {
-      const source = candidate.source === 'manual'
-        ? '手工补录'
-        : `速度#${candidate.speed_rank || '--'} · ${
-          boardClock(candidate.touch_clock)}`;
-      const isExcluded = excludedCodes.has(candidate.code);
-      return `<div class="board-review-option ${
-        isExcluded ? 'excluded' : ''}">
-        <input type="checkbox" data-code="${escapeHtml(candidate.code)}"
-          ${selectedCodes.has(candidate.code) ? 'checked' : ''}
-          ${isExcluded ? 'disabled' : ''}>
-        <span>
-          <strong>${escapeHtml(candidate.name || candidate.code)}</strong>
-          <small>${escapeHtml(candidate.code)} · ${escapeHtml(source)}</small>
-        </span>
-        <span class="board-review-result">${
-          candidate.final_sealed === true ? '收盘封板'
-            : candidate.final_sealed === false ? '当日炸板'
-              : '人工补录'
-        }</span>
-        ${candidate.source === 'manual' ? '' : `
-          <button class="board-exclude-button" type="button"
-            data-code="${escapeHtml(candidate.code)}">${
-              isExcluded ? '撤销剔除' : '不属于板块'
-            }</button>`}
-      </div>`;
-    }).join('')
-    : '<div class="board-review-empty">当前代理成分未产生候选，可手工补录。</div>';
-  $('#board-review-list').querySelectorAll('input[type="checkbox"]')
-    .forEach(input => input.addEventListener('change', () => {
-      const code = input.dataset.code;
-      if (!input.checked) {
-        removeBoardSelection(row.day, code);
-        renderBoardReviewDialog();
-        renderStrongBoard();
-        return;
-      }
-      const candidate = options.find(item => item.code === code);
-      const added = addBoardSelection(row.day, {
-        code: candidate.code,
-        name: candidate.name || candidate.code,
-        touch_clock: candidate.touch_clock || '',
-        source: candidate.source || 'generated_top5',
-      });
-      renderBoardReviewDialog(
-        added ? '' : '最多选择3只，请先取消一只候选。');
-      renderStrongBoard();
-    }));
-  $('#board-review-list').querySelectorAll('.board-exclude-button')
-    .forEach(button => button.addEventListener('click', () => {
-      const candidate = review.find(
-        item => item.code === button.dataset.code);
-      if (!candidate) return;
-      if (excludedCodes.has(candidate.code)) {
-        restoreBoardCandidate(row.day, candidate.code);
-        renderBoardReviewDialog('已撤销剔除。');
-      } else {
-        excludeBoardCandidate(row.day, candidate);
-        renderBoardReviewDialog('已记录：当日不属于该板块。');
-      }
-      renderStrongBoard();
-    }));
-}
-
-function openBoardReview(day) {
-  BOARD_REVIEW_DAY = String(day);
-  renderBoardReviewDialog();
-  $('#board-review-dialog').showModal();
-}
-
-function addManualBoardCandidate() {
-  const row = boardRowByDay(BOARD_REVIEW_DAY);
-  if (!row) return;
-  const code = $('#board-manual-code').value.trim();
-  const name = $('#board-manual-name').value.trim() || code;
-  const touchClock = $('#board-manual-clock').value.trim();
-  if (!/^\d{6}$/.test(code)) {
-    renderBoardReviewDialog('股票代码必须是6位数字。');
+function renderFusionOverview() {
+  const fusion = DATA.strategy_fusion;
+  if (!fusion) {
+    $('#fusion-state').textContent = '融合数据不可用';
+    $('#fusion-state').className = 'status error';
     return;
   }
-  const generated = (row.review_candidates || [])
-    .find(item => item.code === code);
-  restoreBoardCandidate(row.day, code);
-  const added = addBoardSelection(row.day, {
-    code,
-    name: generated?.name || name,
-    touch_clock: generated?.touch_clock || touchClock,
-    source: generated ? 'generated_top5' : 'manual',
-  });
-  if (!added) {
-    renderBoardReviewDialog('最多选择3只，请先取消一只候选。');
-    return;
-  }
-  $('#board-manual-code').value = '';
-  $('#board-manual-name').value = '';
-  $('#board-manual-clock').value = '';
-  renderBoardReviewDialog();
-  renderStrongBoard();
-}
-
-const csvValue = value =>
-  `"${String(value ?? '').replaceAll('"', '""')}"`;
-
-function exportBoardSelections() {
-  const lines = [[
-    '日期', '板块代码', '板块名称', '记录类型', '选择顺序',
-    '股票代码', '股票名称', '来源', '触板时间', '剔除原因',
-    '强度', '净额状态',
-  ]];
-  const days = new Set([
-    ...Object.keys(BOARD_SELECTIONS.days),
-    ...Object.keys(BOARD_SELECTIONS.exclusions),
-  ]);
-  [...days].sort().forEach((day) => {
-    const row = boardRowByDay(day);
-    boardDaySelections(day).forEach((item, index) => {
-      lines.push([
-        day,
-        row?.sector?.code || '',
-        row?.sector?.name || '',
-        '买入候选',
-        index + 1,
-        item.code,
-        item.name,
-        item.source,
-        item.touch_clock || '',
-        '',
-        row?.strength ?? '',
-        row?.net_flow ?? '',
-      ]);
-    });
-    boardDayExclusions(day).forEach((item) => {
-      lines.push([
-        day,
-        row?.sector?.code || '',
-        row?.sector?.name || '',
-        '剔除',
-        '',
-        item.code,
-        item.name,
-        item.source,
-        '',
-        item.reason,
-        row?.strength ?? '',
-        row?.net_flow ?? '',
-      ]);
-    });
-  });
-  const csv = '\ufeff' + lines.map(
-    line => line.map(csvValue).join(',')).join('\n');
-  const url = URL.createObjectURL(new Blob(
-    [csv], { type: 'text/csv;charset=utf-8' }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = '强势打板人工选择.csv';
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function renderStrongBoard(resetPage = false) {
-  const data = DATA.strong_limit_board;
-  if (!data) {
-    $('#board-data-state').textContent = '数据不可用';
-    $('#board-data-state').className = 'status error';
-    $('#board-table').innerHTML = '';
-    return;
-  }
-  const selectedYear = $('#board-year').value;
-  const stats = selectedYear === 'all'
-    ? data.statistics.overall
-    : data.statistics.by_year[selectedYear] || {
-      input_days: 0,
-      candidate_days: 0,
-      candidate_stocks: 0,
-      sealed_stocks: 0,
-      candidate_final_seal_rate: null,
-      day_any_seal_rate: null,
-      exploded_days: [],
-      status_counts: {},
-    };
-  $('#board-kpis').innerHTML = [
-    kpi('输入交易日', String(stats.input_days), `${selectedYear === 'all' ? '全部年份' : selectedYear} 有效记录`),
-    kpi('候选交易日', String(stats.candidate_days), `${stats.candidate_stocks} 只候选股`),
+  const overall = fusion.overall;
+  const v555Trades = fusion.annual.reduce(
+    (sum, row) => sum + row.v555_trades, 0);
+  const sectorTrades = fusion.annual.reduce(
+    (sum, row) => sum + row.sector_trades, 0);
+  $('#fusion-state').textContent = '独立审计通过';
+  $('#fusion-state').className = 'status ready';
+  $('#fusion-kpis').innerHTML = [
     kpi(
-      '代理候选股封板率',
-      pct(stats.candidate_final_seal_rate),
-      `${stats.sealed_stocks}/${stats.candidate_stocks} 最终封板`,
-      tone(stats.candidate_final_seal_rate),
+      '实际交易覆盖',
+      pct(overall.coverage),
+      `${overall.trade_days}/${overall.trading_days}个交易日`,
     ),
+    kpi('V555主策略', String(v555Trades), '实际可交易机会'),
+    kpi('板块补充', String(sectorTrades), '仅填补V555空缺日'),
     kpi(
-      '代理交易日封板率',
-      pct(stats.day_any_seal_rate),
-      '当日至少一只候选最终封板',
-      tone(stats.day_any_seal_rate),
-    ),
-    kpi('含炸板交易日', String((stats.exploded_days || []).length), '包含并列中部分炸板'),
-    kpi(
-      '无法直接统计',
-      String(stats.input_days - stats.candidate_days),
-      '无触板、成分缺失或不可交易',
+      '每日最终建议',
+      '≤1只',
+      '09:37按可买性顺延，也可空仓',
     ),
   ].join('');
-  $('#board-selection-rule').textContent = data.strategy.selection_rule;
-  $('#board-tie-rule').textContent = data.strategy.tie_rule;
-  $('#board-execution-rule').textContent = data.strategy.execution_rule;
-  $('#board-membership-note').textContent = [
-    data.strategy.membership_contract,
-    data.strategy.manual_selection_contract,
-    data.input_audit?.source_contract,
-    ...(data.input_audit?.date_corrections || [])
-      .map(item => item.reason),
-  ].filter(Boolean).join(' · ');
-  const accepted = data.strategy.historical_statistics_accepted !== false;
-  $('#board-data-state').textContent = accepted
-    ? `数据校验通过 · ${dateTime(data.generated_at)}`
-    : `探索性代理 · 禁止作为正式结论 · ${dateTime(data.generated_at)}`;
-  $('#board-data-state').className =
-    `status ${accepted ? 'ready' : 'warning'}`;
-
-  const rows = filteredBoardRows();
-  if (resetPage) BOARD_PAGE = 0;
-  const totalPages = Math.max(
-    1, Math.ceil(rows.length / BOARD_PAGE_SIZE));
-  BOARD_PAGE = Math.min(BOARD_PAGE, totalPages - 1);
-  const displayRows = rows.slice(
-    BOARD_PAGE * BOARD_PAGE_SIZE,
-    (BOARD_PAGE + 1) * BOARD_PAGE_SIZE,
-  );
-  $('#board-count').textContent = `${rows.length} / ${stats.input_days}`;
-  $('#board-page').textContent = `${BOARD_PAGE + 1} / ${totalPages}`;
-  $('#board-prev').disabled = BOARD_PAGE === 0;
-  $('#board-next').disabled = BOARD_PAGE >= totalPages - 1;
-  $('#board-flow-summary').hidden = !['all', '2024'].includes(selectedYear);
-  $('#board-flow-summary').innerHTML = Object.entries(
-    data.statistics.by_net_flow || {},
-  ).map(([, row]) => `
-    <div>
-      <span>${escapeHtml(row.label)}</span>
-      <strong>股票封板 ${pct(row.candidate_final_seal_rate)}
-        · 日级 ${pct(row.day_any_seal_rate)}</strong>
-      <small>${row.input_days}日输入 · ${row.candidate_days}日有候选
-        · ${row.sealed_stocks}/${row.candidate_stocks}只封板</small>
-    </div>`).join('');
-  const statusClass = {
-    first_touch: 'board-first',
-    tie: 'board-tie',
-    no_touch: 'board-empty',
-    all_excluded: 'board-empty',
-    sector_members_incomplete: 'board-missing',
-    historical_sector_changed: 'board-missing',
-    sector_untradable: 'board-missing',
-    sector_code_unmatched: 'board-missing',
-    input_day_invalid: 'board-missing',
-    monitor_missing: 'board-missing',
-    aborted: 'board-missing',
-  };
-  $('#board-table').innerHTML = `
-    <thead><tr><th>日期</th><th>竞价最强板块</th><th>强度 / 净额</th><th>结果</th>
-    <th>首触板时间</th><th>最快触板候选池</th><th>涨停价</th>
-    <th>排除竞价涨停</th><th>数据来源</th></tr></thead>
-    <tbody>${displayRows.map((row) => {
-      const candidates = row.candidates || [];
-      const review = row.review_candidates || candidates;
-      const selected = boardDaySelections(row.day);
-      const selectedCodes = new Set(selected.map(item => item.code));
-      const excluded = boardDayExclusions(row.day);
-      const excludedCodes = new Set(excluded.map(item => item.code));
-      const openLimit = row.universe?.open_limit_stocks || [];
-      return `<tr>
-        <td data-label="日期">${dayText(row.day)}</td>
-        <td data-label="竞价最强板块" class="board-sector">
-          <strong>${escapeHtml(row.sector?.name || '--')}</strong>
-          <small>${escapeHtml(row.sector?.code || '')}</small>
-        </td>
-        <td data-label="强度 / 净额">
-          <strong>${finiteNumber(row.strength)
-            ? Number(row.strength).toLocaleString('zh-CN') : '--'}</strong>
-          <small class="board-flow-${
-            row.net_flow === 1 ? 'in' : row.net_flow === 0 ? 'out' : 'flat'
-          }">${escapeHtml(row.net_flow_label || '--')}</small>
-        </td>
-        <td data-label="结果"><span class="badge ${statusClass[row.status] || ''}">
-          ${escapeHtml(row.status_label || row.status)}</span></td>
-        <td data-label="首触板时间">
-          <strong>${escapeHtml(boardClock(row.touch_clock))}</strong>
-          <small>${escapeHtml(row.touch_window || '')}</small>
-        </td>
-        <td data-label="最快触板候选池" class="board-candidates">${
-          review.length
-            ? review.map(item => boardCandidateHtml(
-              item,
-              selectedCodes.has(item.code),
-              excludedCodes.has(item.code),
-            )).join('')
-            : '<span class="muted">--</span>'
-        }
-          ${row.universe?.review_boundary_tie_omitted
-            ? `<small class="board-review-omitted">同分钟另有${
-              row.universe.review_boundary_tie_omitted}只未展示</small>`
-            : ''}
-          ${selected.length
-            ? `<small class="board-selected-order">买入顺序：${
-              selected.map((item, index) =>
-                `${index + 1}.${escapeHtml(item.name)}`).join(' → ')
-            }</small>`
-            : ''}
-          <button class="board-review-button" type="button"
-            data-day="${row.day}">人工选择 ${selected.length}/3
-            · 已剔除${excluded.length}</button>
-        </td>
-        <td data-label="涨停价">${review.map(item =>
-          finiteNumber(item.limit_price)
-            ? `¥${Number(item.limit_price).toFixed(2)}` : '--'
-        ).join('<br>') || '--'}</td>
-        <td data-label="排除竞价涨停">
-          <strong>${openLimit.length}</strong>
-          <small title="${escapeHtml(openLimit.map(item =>
-            `${item.code} ${item.name}`).join('、'))}">${
-              openLimit.length
-                ? escapeHtml(openLimit.map(item => item.name).join('、'))
-                : '--'
-            }</small>
-        </td>
-        <td data-label="数据来源">
-          <strong>${escapeHtml(row.source_label || '--')}</strong>
-          <small>成分 ${escapeHtml(
-            row.sector?.membership_data_date || '当日归档'
-          )}</small>
-          ${row.input_correction
-            ? `<small class="input-correction">${escapeHtml(
-              row.input_correction)}</small>` : ''}
-        </td>
-      </tr>`;
-    }).join('')}</tbody>`;
-  $('#board-table').querySelectorAll('.board-review-button')
-    .forEach(button => button.addEventListener(
-      'click', () => openBoardReview(button.dataset.day)));
+  $('#fusion-policy').textContent = fusion.recommendation_policy;
+  $('#fusion-annual-table').innerHTML = `
+    <thead><tr><th>年份</th><th>覆盖交易日</th><th>覆盖率</th>
+      <th>V555</th><th>板块补充</th><th>独立机会收益和</th></tr></thead>
+    <tbody>${fusion.annual.map(row => `<tr>
+      <td data-label="年份">${row.year}</td>
+      <td data-label="覆盖交易日">${row.trade_days}/${row.trading_days}</td>
+      <td data-label="覆盖率">${pct(row.coverage)}</td>
+      <td data-label="V555">${row.v555_trades}笔 · ${
+        signedPct(row.v555_sum_return)}</td>
+      <td data-label="板块补充">${row.sector_trades}笔 · ${
+        signedPct(row.sector_sum_return)}</td>
+      <td data-label="独立机会收益和" class="${
+        tone(row.combined_sum_return)}">${
+        signedPct(row.combined_sum_return)}</td>
+    </tr>`).join('')}</tbody>`;
 }
 
 function setActiveView(button) {
@@ -2051,21 +1541,9 @@ function setActiveView(button) {
     item.classList.toggle('active', item === button));
   document.querySelectorAll('.view').forEach((view) =>
     view.classList.toggle('active', view.id === `view-${viewName}`));
-  const board = viewName === 'limit-board';
-  $('.brand-mark').textContent = board ? '板' : '强';
-  $('.brand h1').textContent = board ? '强势打板' : '强势追涨';
-  $('.eyebrow').textContent = board
-    ? 'AWAKENING / SHADOW STRATEGY'
-    : 'AWAKENING / PRIMARY STRATEGY';
-  $('#strategy-state').textContent = board
-    ? '影子策略 · 不自动下单'
-    : '唯一主策略 · 已冻结';
+  $('#strategy-state').textContent = '双策略融合 · 已审计';
   $('#strategy-state').className = 'status ready';
-  if (board) {
-    $('#live-banner').hidden = true;
-  } else {
-    loadLive();
-  }
+  loadLive();
 }
 
 function bind() {
@@ -2075,40 +1553,6 @@ function bind() {
   ['#candidate-year', '#candidate-status', '#candidate-result', '#candidate-study'].forEach((selector) =>
     $(selector).addEventListener('change', renderCandidates));
   $('#candidate-search').addEventListener('input', renderCandidates);
-  ['#board-year', '#board-status', '#board-seal'].forEach((selector) =>
-    $(selector).addEventListener(
-      'change', () => renderStrongBoard(true)));
-  $('#board-search').addEventListener(
-    'input', () => renderStrongBoard(true));
-  $('#board-prev').addEventListener('click', () => {
-    BOARD_PAGE = Math.max(0, BOARD_PAGE - 1);
-    renderStrongBoard();
-  });
-  $('#board-next').addEventListener('click', () => {
-    BOARD_PAGE += 1;
-    renderStrongBoard();
-  });
-  $('#board-export').addEventListener('click', exportBoardSelections);
-  $('#board-review-close').addEventListener(
-    'click', () => $('#board-review-dialog').close());
-  $('#board-review-done').addEventListener(
-    'click', () => $('#board-review-dialog').close());
-  $('#board-review-clear').addEventListener('click', () => {
-    if (!BOARD_REVIEW_DAY) return;
-    delete BOARD_SELECTIONS.days[BOARD_REVIEW_DAY];
-    delete BOARD_SELECTIONS.exclusions[BOARD_REVIEW_DAY];
-    saveBoardSelections();
-    renderBoardReviewDialog('当日人工记录已清空。');
-    renderStrongBoard();
-  });
-  $('#board-manual-form').addEventListener('submit', event => {
-    event.preventDefault();
-    addManualBoardCandidate();
-  });
-  $('#board-review-dialog').addEventListener('close', () => {
-    BOARD_REVIEW_DAY = null;
-    $('#board-review-message').textContent = '';
-  });
   $('#initial-capital').addEventListener('input', renderAccount);
   $('#initial-capital').addEventListener('change', () => {
     const capital = selectedCapital();
@@ -2147,21 +1591,20 @@ async function start() {
     const response = await fetch(`data.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     DATA = await response.json();
-    if (DATA.schema !== 'awakening-strong-momentum-chase-dashboard-v2') {
+    if (DATA.schema !== 'awakening-dual-strategy-dashboard-v3') {
       throw new Error('数据版本不匹配');
     }
-    $('#strategy-state').textContent = '唯一主策略 · 已冻结';
+    $('#strategy-state').textContent = '双策略融合 · 已审计';
     $('#strategy-state').className = 'status ready';
     $('#generated-at').textContent = dateTime(DATA.generated_at);
-    loadBoardSelections();
     const savedCapital = Number(localStorage.getItem(CAPITAL_STORAGE_KEY));
     $('#initial-capital').value = String(
       Number.isFinite(savedCapital) && savedCapital > 0
         ? savedCapital : DATA.simulation.reference_initial_capital,
     );
     renderAccount();
+    renderFusionOverview();
     renderCandidates();
-    renderStrongBoard();
     bind();
   } catch (error) {
     $('#strategy-state').textContent = `读取失败：${error.message}`;
@@ -2172,6 +1615,7 @@ async function start() {
 /* ===== 今日实时候选（独立 live_v555.json，非权威，禁止自动下单） ===== */
 const LIVE_STATUS = {
   shadow_candidates_ready: { label: '实时影子 · 待盘后复核', cls: '' },
+  sector_candidate_ready: { label: '板块补充推荐 · 待盘后复核', cls: '' },
   market_gate_blocked: { label: '市场门未通过 · 今日空仓', cls: 'flat' },
   shadow_abstain: { label: '09:36确认后无候选 · 今日空仓', cls: 'flat' },
   verified_match: { label: 'SuperMind 权威复核一致', cls: 'verified' },
@@ -2192,11 +1636,10 @@ const liveWan = (value) => (Number.isFinite(Number(value))
 
 function renderLive(payload) {
   const banner = $('#live-banner');
-  if ($('#view-limit-board')?.classList.contains('active')) {
-    banner.hidden = true;
-    return;
-  }
-  if (!payload || payload.schema !== 'awakening-v555-live-candidates-v1') {
+  if (!payload || ![
+    'awakening-v555-live-candidates-v1',
+    'awakening-v555-live-candidates-v2',
+  ].includes(payload.schema)) {
     banner.hidden = true;
     return;
   }
@@ -2209,14 +1652,64 @@ function renderLive(payload) {
   chip.className = `live-chip ${meta.cls}`.trim();
   $('#live-dot').className = `live-dot ${meta.cls}`.trim();
 
+  const final = payload.final_recommendation || {};
+  const finalCandidate = final.candidate || {};
+  const finalBox = $('#live-final');
+  if (final.status === 'recommended') {
+    finalBox.className = 'live-final recommended';
+    finalBox.innerHTML = `<strong>最终推荐</strong><span>${
+      escapeHtml(finalCandidate.code || '')} ${
+      escapeHtml(finalCandidate.name || '')}</span><small>${
+      final.source === 'v555_continuation'
+        ? 'V555 主策略' : '最强竞价板块补充'
+    } · ${Number(finalCandidate.queue_rank) > 1
+      ? `前${Number(finalCandidate.queue_rank) - 1}只不可买后顺延`
+      : '队列首选'} · 09:37可买性确认</small>`;
+  } else if (final.status === 'pending_buyability') {
+    finalBox.className = 'live-final pending';
+    finalBox.innerHTML = `<strong>首选待检查</strong><span>${
+      escapeHtml(finalCandidate.code || '')} ${
+      escapeHtml(finalCandidate.name || '')}</span>`
+      + '<small>09:36已入队，等待09:37可买性确认</small>';
+  } else {
+    finalBox.className = 'live-final cash';
+    finalBox.innerHTML = '<strong>最终建议</strong><span>空仓</span>'
+      + '<small>候选未通过完整门控</small>';
+  }
+  const v555Candidates = (payload.selected || []).map((row) => ({
+    ...row, candidate_source: 'v555',
+  }));
+  const sectorNode = payload.sector_candidate || {};
+  const sectorCandidate = sectorNode.candidate
+    ? [{
+      ...sectorNode.candidate,
+      rank: 1,
+      candidate_source: 'strongest_sector',
+      sector_name: sectorNode.sector?.name || '',
+      gate_passed: Boolean(sectorNode.gate_passed),
+      indicative_price: sectorNode.candidate.price_0936,
+    }] : [];
+  const candidates = [...v555Candidates, ...sectorCandidate];
   const cards = $('#live-cards');
-  if (payload.selected && payload.selected.length) {
-    cards.innerHTML = payload.selected.map((row) => `
-      <article class="live-card">
+  if (candidates.length) {
+    cards.innerHTML = candidates.map((row) => {
+      const chosen = final.status === 'recommended'
+        && String(finalCandidate.code) === String(row.code)
+        && (
+          (final.source === 'v555_continuation'
+            && row.candidate_source === 'v555')
+          || (final.source === 'strongest_sector_complement'
+            && row.candidate_source === 'strongest_sector')
+        );
+      const sourceLabel = row.candidate_source === 'v555'
+        ? `V555 #${row.rank}` : `板块补充 · ${row.sector_name || '--'}`;
+      return `
+      <article class="live-card ${chosen ? 'chosen' : ''}">
         <div class="live-card-top">
-          <span class="live-rank">#${row.rank}</span>
+          <span class="live-rank">${sourceLabel}</span>
           <span class="live-code">${escapeHtml(row.code)}</span>
           <span class="live-name">${escapeHtml(row.name || '')}</span>
+          ${chosen ? '<span class="live-choice">推荐</span>' : ''}
         </div>
         <div class="live-card-grid">
           <div class="live-metric"><span>09:35 涨幅</span>
@@ -2235,10 +1728,54 @@ function renderLive(payload) {
             <strong class="live-flat" style="font-size:12px">${
               escapeHtml((row.quote_at_0936 || '').replace('T', ' ').slice(0, 16))}</strong></div>
         </div>
-      </article>`).join('');
+        ${row.candidate_source === 'strongest_sector'
+          ? `<div class="live-gate ${row.gate_passed ? 'passed' : ''}">${
+            row.gate_passed ? '板块门控通过' : '板块门控未通过'
+          }</div>` : ''}
+      </article>`;
+    }).join('');
   } else {
-    cards.innerHTML = '<div class="live-empty">今日无候选，按冻结规则空仓，不做交易</div>';
+    cards.innerHTML = '<div class="live-empty">今日无候选，建议空仓</div>';
   }
+
+  const reasonText = {
+    buyable_at_0937: '可买',
+    sealed_at_limit: '封死涨停',
+    no_ask_liquidity: '无卖一流动性',
+    suspended: '停牌',
+    quote_missing: '报价缺失',
+    quote_time_invalid: '报价时间异常',
+    quote_date_mismatch: '非当日报价',
+    quote_before_0937: '报价早于09:37',
+    invalid_price: '价格异常',
+    ask_above_limit: '卖一超过涨停价',
+  };
+  const queueRows = payload.recommendation_queue || [];
+  const queueMap = new Map(queueRows.map((row) => [
+    `${row.mode_id}:${row.code}`, row,
+  ]));
+  const pool = payload.match_pool || [];
+  $('#live-pool-count').textContent = `${pool.length}只`;
+  $('#live-pool').innerHTML = pool.length
+    ? pool.map((row) => {
+      const queued = queueMap.get(`${row.mode_id}:${row.code}`);
+      const check = queued?.buyability;
+      let state = '模式匹配 · 观察';
+      let cls = 'observe';
+      if (queued) {
+        state = `推荐队列 #${queued.queue_rank} · ${
+          check ? (reasonText[check.reason] || check.reason) : '待09:37检查'
+        }`;
+        cls = check?.buyable ? 'buyable' : (check ? 'blocked' : 'pending');
+      }
+      return `<div class="live-pool-row">
+        <span class="live-pool-code">${escapeHtml(row.code)}</span>
+        <span class="live-pool-name">${escapeHtml(row.name || '')}</span>
+        <span class="live-pool-mode">${escapeHtml(row.mode_label || '')}</span>
+        <span class="live-pool-state ${cls}">${escapeHtml(state)}</span>
+      </div>`;
+    }).join('')
+    : '<div class="live-pool-empty">当前没有符合模式的股票</div>';
 
   const market = payload.market || {};
   $('#live-market').textContent = market.valid_count == null ? ''

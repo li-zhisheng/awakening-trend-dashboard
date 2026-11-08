@@ -5,18 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
-  <title>强势策略看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261107-board-review-v4">
+  <title>双策略选股看板</title>
+  <link rel="stylesheet" href="styles.css?v=20261108-fusion-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261107-board-review-v4" defer></script>
+  <script src="app.js?v=20261108-fusion-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">强</span>
       <div>
-        <div class="eyebrow">AWAKENING / PRIMARY STRATEGY</div>
-        <h1>强势追涨</h1>
+        <div class="eyebrow">AWAKENING / DUAL STRATEGY</div>
+        <h1>双策略选股</h1>
       </div>
     </div>
     <div class="header-status">
@@ -27,9 +27,8 @@
   </header>
 
   <nav class="view-tabs" aria-label="主策略视图">
-    <button class="active" data-view="account" type="button">模拟账户</button>
-    <button data-view="candidates" type="button">候选记录</button>
-    <button data-view="limit-board" type="button">强势打板</button>
+    <button class="active" data-view="account" type="button">选股总览</button>
+    <button data-view="candidates" type="button">V555历史候选</button>
   </nav>
 
   <section id="live-banner" class="live-banner" hidden aria-live="polite">
@@ -43,7 +42,13 @@
         <span id="live-updated">--</span>
       </div>
     </div>
+    <div id="live-final" class="live-final"></div>
     <div id="live-cards" class="live-cards"></div>
+    <div class="live-pool-head">
+      <strong>全部模式匹配</strong>
+      <span id="live-pool-count">0只</span>
+    </div>
+    <div id="live-pool" class="live-pool"></div>
     <div class="live-foot">
       <span id="live-market"></span>
       <span id="live-notice" class="live-notice"></span>
@@ -52,6 +57,20 @@
 
   <main>
     <section id="view-account" class="view active">
+      <section class="fusion-overview">
+        <div class="fusion-head">
+          <div>
+            <h2>V555 + 最强竞价板块补充</h2>
+            <p>主策略捕捉强势延续，补充策略覆盖主策略空缺日</p>
+          </div>
+          <span id="fusion-state" class="status">读取中</span>
+        </div>
+        <div id="fusion-kpis" class="kpi-grid fusion-kpis"></div>
+        <p id="fusion-policy" class="fusion-policy">--</p>
+        <div class="table-wrap fusion-table-wrap">
+          <table id="fusion-annual-table"></table>
+        </div>
+      </section>
       <section class="capital-control">
         <label for="initial-capital">初始本金</label>
         <div class="capital-input">
@@ -75,13 +94,13 @@
       <div class="split-grid">
         <section class="panel">
           <div class="panel-head">
-            <div><h2>年度模拟资金</h2><p>从2024年起连续复合</p></div>
+            <div><h2>V555冻结账户</h2><p>从2024年起连续复合</p></div>
           </div>
           <div class="table-wrap"><table id="annual-table"></table></div>
         </section>
         <section class="panel">
           <div class="panel-head">
-            <div><h2>冻结规则</h2><p>唯一现役主策略</p></div>
+            <div><h2>V555风险规则</h2><p>主策略账户退出与换仓约束</p></div>
           </div>
           <dl id="rule-list" class="rule-list"></dl>
         </section>
@@ -138,84 +157,6 @@
       </section>
     </section>
 
-    <section id="view-limit-board" class="view">
-      <div id="board-kpis" class="kpi-grid board-kpi-grid"></div>
-      <section class="board-contract" aria-label="强势打板策略口径">
-        <div>
-          <span>选股规则</span>
-          <strong id="board-selection-rule">--</strong>
-        </div>
-        <div>
-          <span>并列口径</span>
-          <strong id="board-tie-rule">--</strong>
-        </div>
-        <div>
-          <span>买入顺序</span>
-          <strong id="board-execution-rule">--</strong>
-        </div>
-        <div>
-          <span>运行模式</span>
-          <strong>影子观察，不自动下单</strong>
-        </div>
-      </section>
-      <section id="board-validity-warning" class="board-validity-warning">
-        <strong>历史统计暂不成立</strong>
-        <span>2024板块成员来自2026快照，且当前V1按触板而非封板确认选股。</span>
-      </section>
-      <div class="toolbar">
-        <label>年份<select id="board-year">
-          <option value="all">全部</option>
-          <option value="2024" selected>2024</option>
-          <option value="2025">2025</option>
-          <option value="2026">2026</option>
-        </select></label>
-        <label>结果<select id="board-status">
-          <option value="all">全部结果</option>
-          <option value="first_touch">唯一首触板</option>
-          <option value="tie">并列</option>
-          <option value="no_touch">板块内无关注涨停股</option>
-          <option value="all_excluded">全部不可买</option>
-          <option value="sector_members_incomplete">板块成分未完整收录</option>
-          <option value="historical_sector_changed">历史板块已合并</option>
-          <option value="sector_untradable">板块不可交易</option>
-          <option value="sector_code_unmatched">板块代码无法匹配</option>
-          <option value="monitor_missing">监控结果缺失</option>
-        </select></label>
-        <label>封板结果<select id="board-seal">
-          <option value="all">全部</option>
-          <option value="sealed">全部封板</option>
-          <option value="has_explosion">含炸板候选</option>
-          <option value="exploded">全部炸板</option>
-          <option value="not_applicable">无候选</option>
-        </select></label>
-        <label>搜索<input id="board-search" type="search"
-          placeholder="板块、代码或名称"></label>
-        <div class="board-pagination" aria-label="强势打板分页">
-          <button id="board-prev" type="button"
-            title="上一页" aria-label="上一页">‹</button>
-          <span id="board-page">--</span>
-          <button id="board-next" type="button"
-            title="下一页" aria-label="下一页">›</button>
-        </div>
-        <button id="board-export" type="button">导出人工选择</button>
-        <span id="board-count" class="toolbar-count">--</span>
-      </div>
-      <section id="board-flow-summary"
-        class="study-summary board-flow-summary"></section>
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>每日最强板块首触板候选</h2>
-            <p>排除竞价即涨停；同一分钟触板全部保留</p>
-          </div>
-          <span id="board-data-state" class="status">--</span>
-        </div>
-        <div class="table-wrap board-table-wrap">
-          <table id="board-table"></table>
-        </div>
-      </section>
-      <p id="board-membership-note" class="data-note"></p>
-    </section>
   </main>
 
   <dialog id="stock-dialog">
@@ -262,44 +203,5 @@
     </div>
   </dialog>
 
-  <dialog id="board-review-dialog">
-    <div class="dialog-head">
-      <div>
-        <h2 id="board-review-title">人工选择候选</h2>
-        <p id="board-review-meta">--</p>
-      </div>
-      <button id="board-review-close" type="button"
-              title="关闭" aria-label="关闭">×</button>
-    </div>
-    <div class="board-review-body">
-      <div class="board-review-status">
-        <span>最多选择3只，严格按顺序买入</span>
-        <strong id="board-review-count">0 / 3</strong>
-      </div>
-      <div id="board-review-order" class="board-review-order"></div>
-      <div id="board-review-list" class="board-review-list"></div>
-      <form id="board-manual-form" class="board-manual-form">
-        <div>
-          <label>股票代码
-            <input id="board-manual-code" inputmode="numeric"
-              maxlength="6" placeholder="6位代码" required>
-          </label>
-          <label>股票名称
-            <input id="board-manual-name" placeholder="可选">
-          </label>
-          <label>触板时间
-            <input id="board-manual-clock" maxlength="8"
-              placeholder="HH:MM:SS">
-          </label>
-        </div>
-        <button type="submit">添加候选</button>
-      </form>
-      <p id="board-review-message" class="board-review-message"></p>
-      <div class="board-review-actions">
-        <button id="board-review-clear" type="button">清空当日记录</button>
-        <button id="board-review-done" type="button">完成</button>
-      </div>
-    </div>
-  </dialog>
 </body>
 </html>
