@@ -1905,7 +1905,7 @@ async function start() {
 /* ===== 今日实时候选（独立 live_v555.json，非权威，禁止自动下单） ===== */
 const LIVE_STATUS = {
   shadow_candidates_ready: { label: '实时影子 · 待盘后复核', cls: '' },
-  sector_candidate_ready: { label: '板块补充推荐 · 待盘后复核', cls: '' },
+  sector_candidate_ready: { label: '最强竞价候选 · 待盘后复核', cls: '' },
   market_gate_blocked: { label: '市场门未通过 · 今日空仓', cls: 'flat' },
   shadow_abstain: { label: '09:36确认后无候选 · 今日空仓', cls: 'flat' },
   verified_match: { label: 'SuperMind 权威复核一致', cls: 'verified' },
@@ -1952,7 +1952,7 @@ function renderLive(payload) {
       escapeHtml(finalCandidate.code || '')} ${
       escapeHtml(finalCandidate.name || '')}</span><small>${
       final.source === 'v555_continuation'
-        ? 'V555 主策略' : '最强竞价板块补充'
+        ? 'V555 独立候选' : '最强竞价板块独立候选'
     } · ${Number(finalCandidate.queue_rank) > 1
       ? `前${Number(finalCandidate.queue_rank) - 1}只不可买后顺延`
       : '队列首选'} · 09:37可买性确认</small>`;
@@ -1993,7 +1993,7 @@ function renderLive(payload) {
             && row.candidate_source === 'strongest_sector')
         );
       const sourceLabel = row.candidate_source === 'v555'
-        ? `V555 #${row.rank}` : `板块补充 · ${row.sector_name || '--'}`;
+        ? `V555 #${row.rank}` : `最强竞价 #1 · ${row.sector_name || '--'}`;
       return `
       <article class="live-card ${chosen ? 'chosen' : ''}">
         <div class="live-card-top">
@@ -2001,6 +2001,8 @@ function renderLive(payload) {
           <span class="live-code">${escapeHtml(row.code)}</span>
           <span class="live-name">${escapeHtml(row.name || '')}</span>
           ${chosen ? '<span class="live-choice">推荐</span>' : ''}
+          ${row.triple_resonance
+            ? '<span class="live-resonance">板块 + ETF共振</span>' : ''}
         </div>
         <div class="live-card-grid">
           <div class="live-metric"><span>09:35 涨幅</span>
@@ -2021,7 +2023,9 @@ function renderLive(payload) {
         </div>
         ${row.candidate_source === 'strongest_sector'
           ? `<div class="live-gate ${row.gate_passed ? 'passed' : ''}">${
-            row.gate_passed ? '板块门控通过' : '板块门控未通过'
+            row.gate_passed
+              ? '最强竞价板块独立门控通过'
+              : '最强竞价板块独立门控未通过'
           }</div>` : ''}
       </article>`;
     }).join('');
@@ -2069,11 +2073,15 @@ function renderLive(payload) {
     : '<div class="live-pool-empty">当前没有符合模式的股票</div>';
 
   const market = payload.market || {};
+  const etfThemes = (payload.etf_signal?.top_themes || [])
+    .map((row) => row.name || row.tag)
+    .slice(0, 5);
   $('#live-market').textContent = market.valid_count == null ? ''
     : `市场均涨 ${signedPct(market.mean_return)} · 强势比 ${pct(market.strong_ratio)}`
       + `（${market.strong_count}/${market.valid_count}）`
       + ` · 初选 ${payload.stages?.before_confirmation ?? '--'}`
       + ` → 确认 ${payload.stages?.confirmed ?? '--'}`
+      + (etfThemes.length ? ` · ETF主题Top5：${etfThemes.join('、')}` : '')
       + (payload.verification
         ? ` · 权威候选：${((payload.verification.authoritative_codes || []).join('、') || '无')}`
         : '');

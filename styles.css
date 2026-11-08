@@ -780,7 +780,13 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   padding: 13px 15px;
 }
 .live-card.chosen { border-color: var(--red); }
-.live-card-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+.live-card-top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 9px;
+}
 .live-rank {
   font-size: 12px; font-weight: 700; color: #0d1114;
   background: var(--cyan); border-radius: 4px;
@@ -793,6 +799,12 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: var(--red);
   font-size: 12px;
   font-weight: 700;
+}
+.live-resonance {
+  border: 1px solid #8f6f32;
+  color: #f0c66e;
+  font-size: 11px;
+  padding: 2px 6px;
 }
 .live-card-grid {
   display: grid;
