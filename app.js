@@ -1794,20 +1794,24 @@ function renderFusionOverview() {
       '09:37按可买性顺延，也可空仓',
     ),
   ].join('');
-  $('#fusion-policy').textContent = fusion.recommendation_policy;
+  $('#fusion-policy').textContent = (
+    `${fusion.recommendation_policy}；下表收益数字为逐笔净收益率简单相加，`
+    + '不是账户年收益率，不能用于计算实际资金增值。'
+  );
   $('#fusion-annual-table').innerHTML = `
     <thead><tr><th>年份</th><th>覆盖交易日</th><th>覆盖率</th>
-      <th>V555</th><th>板块补充</th><th>独立机会收益和</th></tr></thead>
+      <th>V555逐笔和</th><th>板块补充逐笔和</th>
+      <th>全部机会逐笔和（非账户收益）</th></tr></thead>
     <tbody>${fusion.annual.map(row => `<tr>
       <td data-label="年份">${row.year}</td>
       <td data-label="覆盖交易日">${row.trade_days}/${row.trading_days}</td>
       <td data-label="覆盖率">${pct(row.coverage)}</td>
-      <td data-label="V555">${row.v555_trades}笔 · ${
+      <td data-label="V555逐笔和">${row.v555_trades}笔 · Σ ${
         signedPct(row.v555_sum_return)}</td>
-      <td data-label="板块补充">${row.sector_trades}笔 · ${
+      <td data-label="板块补充逐笔和">${row.sector_trades}笔 · Σ ${
         signedPct(row.sector_sum_return)}</td>
-      <td data-label="独立机会收益和" class="${
-        tone(row.combined_sum_return)}">${
+      <td data-label="全部机会逐笔和（非账户收益）" class="${
+        tone(row.combined_sum_return)}">Σ ${
         signedPct(row.combined_sum_return)}</td>
     </tr>`).join('')}</tbody>`;
 }
