@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>双策略选股看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261108-fusion-v1">
+  <link rel="stylesheet" href="styles.css?v=20261108-date-review-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261108-fusion-v1" defer></script>
+  <script src="app.js?v=20261108-date-review-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -27,7 +27,8 @@
   </header>
 
   <nav class="view-tabs" aria-label="主策略视图">
-    <button class="active" data-view="account" type="button">选股总览</button>
+    <button class="active" data-view="review" type="button">每日选股复盘</button>
+    <button data-view="account" type="button">策略总览</button>
     <button data-view="candidates" type="button">V555历史候选</button>
   </nav>
 
@@ -56,7 +57,50 @@
   </section>
 
   <main>
-    <section id="view-account" class="view active">
+    <section id="view-review" class="view active">
+      <section class="review-toolbar">
+        <div>
+          <span>复盘日期</span>
+          <strong id="review-day-title">--</strong>
+        </div>
+        <div class="review-date-controls">
+          <button id="review-prev" type="button"
+            title="上一信号日" aria-label="上一信号日">‹</button>
+          <select id="review-date" aria-label="选择复盘日期"></select>
+          <button id="review-next" type="button"
+            title="下一信号日" aria-label="下一信号日">›</button>
+        </div>
+      </section>
+      <div id="review-kpis" class="kpi-grid review-kpis"></div>
+      <div class="review-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>历史最终推荐</h2>
+              <p>双策略最终选择、买入与卖出点位</p>
+            </div>
+            <span id="review-recommendation-count" class="status">--</span>
+          </div>
+          <div class="table-wrap review-table-wrap">
+            <table id="review-recommendations"></table>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>当日候选股</h2>
+              <p>包含策略模式、排名与09:36信号</p>
+            </div>
+            <span id="review-candidate-count" class="status">--</span>
+          </div>
+          <div class="table-wrap review-table-wrap">
+            <table id="review-candidates"></table>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-account" class="view">
       <section class="fusion-overview">
         <div class="fusion-head">
           <div>

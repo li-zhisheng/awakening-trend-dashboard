@@ -1,8 +1,12 @@
 'use strict';
 
 let DATA = null;
+let LIVE_DATA = null;
 let MARKET_STATE = null;
 let MARKET_CHART = null;
+let REVIEW_DATES = [];
+let REVIEW_CURRENT = { recommendations: [], candidates: [] };
+let REVIEW_TOUCHED = false;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,9 +18,12 @@ const pct = (value) => finiteNumber(value)
 const signedPct = (value) => finiteNumber(value)
   ? `${Number(value) > 0 ? '+' : ''}${(Number(value) * 100).toFixed(2)}%`
   : '--';
-const buyGainLabel = value => `买 ${signedPct(value)}`;
+const buyGainLabel = value => finiteNumber(value)
+  ? `买 ${signedPct(value)}` : '买入';
 const sellGainLabel = (value, simulated = false) =>
-  `${simulated ? '模拟卖' : '卖'} ${signedPct(value)}`;
+  finiteNumber(value)
+    ? `${simulated ? '模拟卖' : '卖'} ${signedPct(value)}`
+    : simulated ? '模拟卖出' : '卖出';
 const money = (value) => Number.isFinite(Number(value))
   ? Number(value).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
@@ -213,6 +220,8 @@ const EXIT_REASON_LABELS = {
   trend_break: '趋势破坏',
   maximum_hold: '持仓到期',
   unresolved_exit_total_loss: '退出失败·全损记账',
+  sector_t1_close: '次日收盘退出',
+  v555_causal_exit: 'V555因果退出',
 };
 const EXIT_REASON_DETAILS = {
   weakness: '09:35当日跌幅≤-1.5%',
@@ -220,6 +229,8 @@ const EXIT_REASON_DETAILS = {
   trend_break: '09:35跌破动态MA5，且个股、市场同时为负',
   maximum_hold: '持仓达到8个交易日',
   unresolved_exit_total_loss: '无法完成退出，按全损记账',
+  sector_t1_close: '最强竞价板块补充策略于次一交易日收盘退出',
+  v555_causal_exit: 'V555冻结风险规则触发退出',
 };
 const exitReasonText = (reason, detailed = false) => {
   const value = String(reason || '');
@@ -514,6 +525,10 @@ function dailyMarketMarks(daily) {
       ? Number(price)
       : long ? Number(bars[index][3]) : Number(bars[index][2]);
     const clock = String(clockValue || '').padStart(4, '0');
+    const executionLabel = execution
+      ? `${label}\n${clock.slice(0, 2)}:${
+        clock.slice(2)} ¥${markerPrice.toFixed(2)}`
+      : label;
     const probabilityText = probability !== null
       && probability !== ''
       && Number.isFinite(Number(probability))
@@ -553,7 +568,7 @@ function dailyMarketMarks(daily) {
         borderRadius: 3,
         fontSize: 9,
         fontWeight: 700,
-        formatter: label,
+        formatter: executionLabel,
       },
       tooltip: {
         formatter: `${label}${clockValue ? ` ${clock.slice(0, 2)}:${clock.slice(2)}` : ''}`
@@ -600,6 +615,32 @@ function dailyMarketMarks(daily) {
     exitKeys.add(key);
   }
   return marks;
+}
+
+function marketTradeMarkSeries(marks) {
+  return {
+    name: '买卖信号',
+    type: 'scatter',
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    z: 40,
+    silent: false,
+    tooltip: {
+      trigger: 'item',
+      formatter: params => params.data.tooltipText || params.name,
+    },
+    data: marks.map(mark => ({
+      name: mark.name,
+      kind: mark.kind,
+      value: mark.coord,
+      symbol: mark.symbol,
+      symbolSize: mark.symbolSize,
+      symbolOffset: mark.symbolOffset,
+      itemStyle: mark.itemStyle,
+      label: mark.label,
+      tooltipText: mark.tooltip?.formatter,
+    })),
+  };
 }
 
 function renderDailyMarket() {
@@ -723,8 +764,8 @@ function renderDailyMarket() {
           label: { color: '#e5b94f', formatter: '入选日' },
           data: [{ xAxis: String(row.day) }],
         },
-        markPoint: { silent: true, data: marks },
       },
+      marketTradeMarkSeries(marks),
       {
         name: 'MA5', type: 'line', data: ma5,
         showSymbol: false,
@@ -870,6 +911,10 @@ function minuteMarketMarks(minute) {
       : kind === 'confirmation' ? '#e5b94f'
       : long ? '#ef6666' : '#3fc28b';
     const change = (markerPrice / previousClose - 1) * 100;
+    const executionLabel = execution
+      ? `${label}\n${clock.slice(0, 2)}:${
+        clock.slice(2)} ¥${markerPrice.toFixed(2)}`
+      : `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`;
     return {
       name: label,
       kind,
@@ -910,7 +955,7 @@ function minuteMarketMarks(minute) {
           'strategy_sell',
           'simulated_sell',
         ].includes(kind)
-          ? label
+          ? executionLabel
           : `${label} ${clock.slice(0, 2)}:${clock.slice(2)}`,
       },
       tooltip: {
@@ -1155,7 +1200,6 @@ function renderMinuteMarket() {
         lineStyle: { width: 2, color: '#78a8e8' },
         itemStyle: { color: '#78a8e8' },
         areaStyle: { color: 'rgba(120,168,232,.08)' },
-        markPoint: { data: markPoints },
         markLine: {
           silent: true,
           symbol: 'none',
@@ -1202,6 +1246,7 @@ function renderMinuteMarket() {
           ],
         },
       },
+      marketTradeMarkSeries(markPoints),
       ...(
         limitInfo?.hitUp
           ? [{
@@ -1294,22 +1339,37 @@ async function openCandidateMarket(row, initialView = 'daily') {
     view: initialView,
   };
   $('#stock-dialog-title').textContent = `${row.code} ${row.name}`;
-  $('#stock-dialog-meta').textContent =
-    `强势追涨 Top${row.candidate_rank} · ${row.candidate_status_reason}`
-    + ` · ${row.sector_name || '板块未映射'}`;
+  $('#stock-dialog-meta').textContent = [
+    reviewModeLabel(row),
+    row.candidate_rank ? `Top${row.candidate_rank}` : '',
+    row.candidate_status_reason || '',
+    row.sector_name || '',
+  ].filter(Boolean).join(' · ');
   $('#stock-entry-tags').innerHTML = entryTagsHtml(row);
   $('#detail-signal-day').textContent = dayText(day);
   $('#detail-entry').textContent =
-    `${String(row.entry_clock).padStart(4, '0')} · ¥${Number(row.entry_price).toFixed(2)}`;
+    finiteNumber(row.entry_price)
+      ? `${String(row.entry_clock).padStart(4, '0')} · ¥${
+        Number(row.entry_price).toFixed(2)}`
+      : '待确认';
   $('#detail-exit').textContent =
-    `${dayText(row.exit_day)} · ${String(row.exit_clock).padStart(4, '0')}`;
+    row.exit_day && finiteNumber(row.exit_price)
+      ? `${dayText(row.exit_day)} · ${
+        String(row.exit_clock).padStart(4, '0')} · ¥${
+        Number(row.exit_price).toFixed(2)}`
+      : '--';
   $('#detail-exit-reason').textContent =
     exitReasonText(row.exit_reason, true);
   $('#detail-return').textContent = pct(row.net_return);
   $('#detail-return').className = tone(row.net_return);
-  $('#detail-support').textContent = row.dynamic_support_touched
-    ? `10:00前触达 · ${String(row.dynamic_support_entry_clock).padStart(4, '0')} · ¥${Number(row.dynamic_support_price).toFixed(2)}`
-    : [
+  $('#detail-support').textContent =
+    row.mode_id === 'strongest_sector_complement'
+      ? `板块代理 · ${row.sector_name || row.sector_code || '--'}`
+      : row.dynamic_support_touched
+        ? `10:00前触达 · ${
+          String(row.dynamic_support_entry_clock).padStart(4, '0')
+        } · ¥${Number(row.dynamic_support_price).toFixed(2)}`
+        : [
         row.late_dynamic_support_touched
           ? `订单到期后 ${String(row.full_day_dynamic_support_touch_clock).padStart(4, '0')} 触达`
           : '全天未触达动态支撑',
@@ -1319,13 +1379,17 @@ async function openCandidateMarket(row, initialView = 'daily') {
         row.maximum_pullback_clock
           ? String(row.maximum_pullback_clock).padStart(4, '0')
           : '',
+        ].filter(Boolean).join(' · ');
+  $('#detail-prior-day').textContent =
+    row.mode_id === 'strongest_sector_complement'
+      ? '使用过去20日代理统计'
+      : [
+        row.previous_day_closed_limit_up
+          ? '涨停' : signedPct(row.previous_day_return),
+        Number.isFinite(Number(row.previous_day_amount_ratio))
+          ? `量比 ${Number(row.previous_day_amount_ratio).toFixed(2)}`
+          : '',
       ].filter(Boolean).join(' · ');
-  $('#detail-prior-day').textContent = [
-    row.previous_day_closed_limit_up ? '涨停' : signedPct(row.previous_day_return),
-    Number.isFinite(Number(row.previous_day_amount_ratio))
-      ? `量比 ${Number(row.previous_day_amount_ratio).toFixed(2)}`
-      : '',
-  ].filter(Boolean).join(' · ');
   $('#stock-market-status').textContent = '正在读取日K与分时';
   $('#stock-minute-nav').hidden = true;
   $('#stock-minute-date').innerHTML = '';
@@ -1489,6 +1553,219 @@ function renderCandidates() {
   $('#sync-state').className = `status ${sync.status === 'ready' ? 'ready' : ''}`;
 }
 
+const reviewModeLabel = row => (
+  row.mode_label
+  || (
+    row.mode_id === 'strongest_sector_complement'
+      ? '最强竞价板块补充' : 'V555强势追涨'
+  )
+);
+
+function reviewDataForDay(day) {
+  const historicalRecommendations = (
+    DATA.historical_recommendations || []
+  ).filter(row => compactDay(row.day) === day);
+  const historicalCandidates = DATA.candidate_rows
+    .filter(row => compactDay(row.day) === day)
+    .map(row => ({
+      ...row,
+      mode_id: row.mode_id || 'v555_continuation',
+      mode_label: row.mode_label || 'V555强势追涨',
+    }));
+  if (!LIVE_DATA || compactDay(LIVE_DATA.date) !== day) {
+    const candidates = [...historicalCandidates];
+    historicalRecommendations.forEach(row => {
+      if (!candidates.some(item => item.code === row.code)) {
+        candidates.push({
+          ...row,
+          signal_clock: row.entry_clock,
+          signal_price: row.entry_price,
+        });
+      }
+    });
+    return {
+      recommendations: historicalRecommendations,
+      candidates,
+      live: false,
+    };
+  }
+  const queue = new Map(
+    (LIVE_DATA.recommendation_queue || []).map(row => [
+      `${row.mode_id}:${row.code}`, row,
+    ]),
+  );
+  const candidates = (LIVE_DATA.match_pool || []).map(row => {
+    const queued = queue.get(`${row.mode_id}:${row.code}`);
+    return {
+      ...row,
+      year: Number(day.slice(0, 4)),
+      day,
+      candidate_rank: row.mode_rank || row.queue_rank || 1,
+      basket_size: (LIVE_DATA.match_pool || []).length,
+      candidate_status: queued
+        ? 'recommendation_queue' : 'observation_candidate',
+      candidate_status_reason: queued
+        ? `推荐队列 #${queued.queue_rank}` : '模式匹配观察',
+      signal_clock: 936,
+      signal_price: (
+        row.indicative_price ?? row.price_0936 ?? null
+      ),
+      market_available: false,
+    };
+  });
+  const final = LIVE_DATA.final_recommendation || {};
+  const candidate = final.candidate;
+  const recommendations = candidate ? [{
+    ...candidate,
+    year: Number(day.slice(0, 4)),
+    day,
+    mode_label: reviewModeLabel(candidate),
+    recommendation_status: final.status,
+    entry_clock: 937,
+    entry_price: (
+      candidate.buyability?.entry_price
+      ?? candidate.indicative_price
+      ?? candidate.price_0936
+      ?? null
+    ),
+    exit_day: '',
+    exit_clock: null,
+    exit_price: null,
+    net_return: null,
+    market_available: false,
+  }] : [];
+  return { recommendations, candidates, live: true };
+}
+
+function refreshReviewDates(preferLive = false) {
+  const values = new Set((DATA.review_dates || []).map(compactDay));
+  if (LIVE_DATA?.date) values.add(compactDay(LIVE_DATA.date));
+  REVIEW_DATES = [...values].filter(Boolean).sort();
+  const select = $('#review-date');
+  const previous = compactDay(select.value);
+  select.innerHTML = [...REVIEW_DATES].reverse().map(day =>
+    `<option value="${day}">${dayText(day)}${
+      compactDay(LIVE_DATA?.date) === day ? ' · 实时' : ''
+    }</option>`).join('');
+  const target = (
+    preferLive && LIVE_DATA?.date
+      ? compactDay(LIVE_DATA.date)
+      : REVIEW_DATES.includes(previous)
+        ? previous : REVIEW_DATES.at(-1)
+  );
+  if (target) select.value = target;
+  renderDailyReview();
+}
+
+function moveReviewDate(offset) {
+  const current = compactDay($('#review-date').value);
+  const index = REVIEW_DATES.indexOf(current);
+  const target = REVIEW_DATES[index + offset];
+  if (!target) return;
+  $('#review-date').value = target;
+  renderDailyReview();
+}
+
+function reviewStockButton(row, role) {
+  const disabled = row.market_available === false;
+  return `<button class="candidate-stock review-stock" type="button"
+    data-code="${escapeHtml(row.code)}" data-role="${role}"
+    ${disabled ? 'disabled title="盘后生成权威日K与分时标记"' : ''}>
+    <strong>${escapeHtml(row.name || row.code)}</strong>
+    <small>${escapeHtml(row.code)}</small>
+  </button>`;
+}
+
+function renderDailyReview() {
+  const day = compactDay($('#review-date').value);
+  if (!day) return;
+  const data = reviewDataForDay(day);
+  REVIEW_CURRENT = data;
+  const recommendations = data.recommendations;
+  const candidates = data.candidates;
+  const modes = new Set(candidates.map(row => row.mode_id).filter(Boolean));
+  $('#review-day-title').textContent =
+    `${dayText(day)}${data.live ? ' · 实时' : ''}`;
+  const winner = recommendations[0];
+  $('#review-kpis').innerHTML = [
+    kpi(
+      '最终推荐',
+      winner ? '1只' : '空仓',
+      winner
+        ? `${winner.name} ${winner.code}` : '当日没有通过完整门控',
+      winner ? 'profit' : '',
+    ),
+    kpi('模式匹配', String(candidates.length), '当日全部候选'),
+    kpi('策略模式', String(modes.size), [...modes].map(mode =>
+      mode === 'strongest_sector_complement'
+        ? '板块补充' : 'V555').join(' + ') || '--'),
+    kpi(
+      '推荐结果',
+      winner && finiteNumber(winner.net_return)
+        ? signedPct(winner.net_return)
+        : data.live ? '待执行' : '--',
+      data.live ? '09:37可买性确认' : '历史实际机会',
+      tone(winner?.net_return),
+    ),
+  ].join('');
+  $('#review-recommendation-count').textContent =
+    `${recommendations.length}只`;
+  $('#review-candidate-count').textContent = `${candidates.length}只`;
+  $('#review-recommendations').innerHTML = recommendations.length
+    ? `<thead><tr><th>股票</th><th>模式</th><th>买入</th>
+      <th>卖出</th><th>结果</th></tr></thead>
+      <tbody>${recommendations.map(row => `<tr>
+        <td>${reviewStockButton(row, 'recommendation')}</td>
+        <td><span class="mode-badge">${
+          escapeHtml(reviewModeLabel(row))}</span></td>
+        <td>${finiteNumber(row.entry_price)
+          ? `${String(row.entry_clock).padStart(4, '0')} · ¥${
+            Number(row.entry_price).toFixed(2)}` : '待确认'}</td>
+        <td>${row.exit_day
+          ? `${dayText(row.exit_day)} ${String(
+            row.exit_clock).padStart(4, '0')} · ¥${
+            Number(row.exit_price).toFixed(2)}` : '--'}</td>
+        <td class="${tone(row.net_return)}">${
+          finiteNumber(row.net_return) ? signedPct(row.net_return) : '--'
+        }</td></tr>`).join('')}</tbody>`
+    : '<tbody><tr><td>当日没有最终推荐，保持空仓</td></tr></tbody>';
+  $('#review-candidates').innerHTML = candidates.length
+    ? `<thead><tr><th>股票</th><th>模式</th><th>排名 / 状态</th>
+      <th>信号时间</th><th>参考价格</th></tr></thead>
+      <tbody>${candidates.map(row => `<tr>
+        <td>${reviewStockButton(row, 'candidate')}</td>
+        <td><span class="mode-badge">${
+          escapeHtml(reviewModeLabel(row))}</span></td>
+        <td>#${row.candidate_rank || row.mode_rank || 1} · ${
+          escapeHtml(row.candidate_status_reason || row.candidate_status || '')
+        }</td>
+        <td>${String(row.signal_clock || row.confirmation_clock || 936)
+          .padStart(4, '0')} · ${signedPct(
+            row.return_0936 ?? row.signal_return
+          )}</td>
+        <td>${String(row.entry_clock || row.signal_clock || 937)
+          .padStart(4, '0')} · ${
+            finiteNumber(row.signal_price ?? row.entry_price)
+              ? `¥${Number(
+                row.signal_price ?? row.entry_price
+              ).toFixed(2)}`
+              : '--'
+          }</td></tr>`).join('')}</tbody>`
+    : '<tbody><tr><td>当日没有符合模式的候选股</td></tr></tbody>';
+  document.querySelectorAll('.review-stock:not([disabled])').forEach(
+    button => button.addEventListener('click', () => {
+      const source = button.dataset.role === 'recommendation'
+        ? REVIEW_CURRENT.recommendations : REVIEW_CURRENT.candidates;
+      const row = source.find(item => item.code === button.dataset.code);
+      if (row) openCandidateMarket(row);
+    }),
+  );
+  const index = REVIEW_DATES.indexOf(day);
+  $('#review-prev').disabled = index <= 0;
+  $('#review-next').disabled =
+    index < 0 || index >= REVIEW_DATES.length - 1;
+}
+
 function renderFusionOverview() {
   const fusion = DATA.strategy_fusion;
   if (!fusion) {
@@ -1553,6 +1830,18 @@ function bind() {
   ['#candidate-year', '#candidate-status', '#candidate-result', '#candidate-study'].forEach((selector) =>
     $(selector).addEventListener('change', renderCandidates));
   $('#candidate-search').addEventListener('input', renderCandidates);
+  $('#review-date').addEventListener('change', () => {
+    REVIEW_TOUCHED = true;
+    renderDailyReview();
+  });
+  $('#review-prev').addEventListener('click', () => {
+    REVIEW_TOUCHED = true;
+    moveReviewDate(-1);
+  });
+  $('#review-next').addEventListener('click', () => {
+    REVIEW_TOUCHED = true;
+    moveReviewDate(1);
+  });
   $('#initial-capital').addEventListener('input', renderAccount);
   $('#initial-capital').addEventListener('change', () => {
     const capital = selectedCapital();
@@ -1591,7 +1880,7 @@ async function start() {
     const response = await fetch(`data.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     DATA = await response.json();
-    if (DATA.schema !== 'awakening-dual-strategy-dashboard-v3') {
+    if (DATA.schema !== 'awakening-dual-strategy-dashboard-v4') {
       throw new Error('数据版本不匹配');
     }
     $('#strategy-state').textContent = '双策略融合 · 已审计';
@@ -1605,6 +1894,7 @@ async function start() {
     renderAccount();
     renderFusionOverview();
     renderCandidates();
+    refreshReviewDates(Boolean(LIVE_DATA));
     bind();
   } catch (error) {
     $('#strategy-state').textContent = `读取失败：${error.message}`;
@@ -1643,6 +1933,7 @@ function renderLive(payload) {
     banner.hidden = true;
     return;
   }
+  LIVE_DATA = payload;
   banner.hidden = false;
   const meta = LIVE_STATUS[payload.status]
     || { label: payload.shadow_status || payload.status, cls: 'flat' };
@@ -1790,6 +2081,7 @@ function renderLive(payload) {
   const stamp = payload.published_at || payload.generated_at;
   $('#live-updated').textContent = stamp
     ? `信号 ${dateTime(payload.generated_at)} · 发布 ${dateTime(stamp)}` : '';
+  if (DATA) refreshReviewDates(!REVIEW_TOUCHED);
 }
 
 async function loadLive() {

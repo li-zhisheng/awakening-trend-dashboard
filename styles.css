@@ -171,6 +171,51 @@ main { max-width: 1440px; margin: 0 auto; padding: 22px 24px 48px; }
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid #315d65;
+  border-radius: 7px;
+  background: #142127;
+}
+.review-toolbar span,
+.review-toolbar strong { display: block; }
+.review-toolbar span {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.review-toolbar strong { font-size: 18px; }
+.review-date-controls {
+  display: grid;
+  grid-template-columns: 38px minmax(170px, 230px) 38px;
+  gap: 7px;
+}
+.review-date-controls button { padding: 0; font-size: 20px; }
+.review-date-controls select { width: 100%; min-height: 38px; }
+.review-kpis { grid-template-columns: repeat(4, minmax(150px, 1fr)); }
+.review-kpis .kpi { min-height: 98px; }
+.review-grid {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+.review-table-wrap { max-height: 58vh; }
+.review-table-wrap table { min-width: 650px; }
+.review-table-wrap tbody tr:hover { background: #1c252a; }
+.mode-badge {
+  display: inline-flex;
+  padding: 2px 6px;
+  border: 1px solid #3d7077;
+  border-radius: 4px;
+  color: var(--cyan);
+  font-size: 10px;
+  white-space: nowrap;
+}
 
 
 .profit { color: var(--red) !important; }
@@ -576,6 +621,7 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
 
 
   .split-grid { grid-template-columns: 1fr; }
+  .review-grid { grid-template-columns: 1fr; }
   .hash-grid { grid-template-columns: repeat(2, 1fr); }
   .detail-strip { grid-template-columns: repeat(2, 1fr); }
 }
@@ -588,6 +634,10 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   }
   .header-status { width: 100%; flex-wrap: wrap; }
   .fusion-head { flex-direction: column; }
+  .review-toolbar { align-items: stretch; flex-direction: column; }
+  .review-date-controls {
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+  }
   .fusion-table-wrap { max-height: none; overflow: visible; }
   #fusion-annual-table thead { display: none; }
   #fusion-annual-table tbody { display: grid; gap: 10px; }
