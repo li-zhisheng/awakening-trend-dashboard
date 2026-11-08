@@ -1704,7 +1704,7 @@ function renderDailyReview() {
     kpi('模式匹配', String(candidates.length), '当日全部候选'),
     kpi('策略模式', String(modes.size), [...modes].map(mode =>
       mode === 'strongest_sector_complement'
-        ? '板块补充' : 'V555').join(' + ') || '--'),
+        ? '最强竞价' : 'V555').join(' + ') || '--'),
     kpi(
       '推荐结果',
       winner && finiteNumber(winner.net_return)
