@@ -2018,6 +2018,7 @@ function renderLive(payload) {
     weakness: '09:35较昨收≤-1.5%',
     trailing: '较最高价回撤≥7%',
     trend_break: '跌破MA5且个股/市场同步走弱',
+    sector_next_session_close: '板块备选次一交易日收盘退出',
   };
   const sellStateText = {
     sellable_after_0935: '可卖',
@@ -2026,6 +2027,8 @@ function renderLive(payload) {
     bid_depth_below_one_lot: '买一不足一手·继续挂起',
     suspended: '停牌·继续挂起',
     quote_missing: '报价缺失·继续挂起',
+    waiting_closing_auction: '等待14:57收盘集合竞价',
+    closing_auction_sellable: '收盘集合竞价可卖',
   };
   const exitRows = payload.exit_queue || [];
   const exitsBox = $('#live-exits');
