@@ -2003,12 +2003,55 @@ function renderLive(payload) {
   chip.className = `live-chip ${meta.cls}`.trim();
   $('#live-dot').className = `live-dot ${meta.cls}`.trim();
 
+  const account = payload.strategy_account || {};
+  const positions = account.positions || [];
+  const accountBox = $('#live-account');
+  accountBox.innerHTML = `
+    <strong>策略持仓 ${positions.length}/${account.maximum_positions ?? 2}</strong>
+    <span>${positions.length
+      ? positions.map((row) => `${
+        escapeHtml(row.code)} ${escapeHtml(row.name || '')} · 成本 ¥${
+        Number(row.entry_price).toFixed(2)}`).join('｜')
+      : '当前无持仓'}</span>`;
+
+  const exitReasonText = {
+    weakness: '09:35较昨收≤-1.5%',
+    trailing: '较最高价回撤≥7%',
+    trend_break: '跌破MA5且个股/市场同步走弱',
+  };
+  const sellStateText = {
+    sellable_after_0935: '可卖',
+    sealed_at_limit_down: '跌停无买盘·继续挂起',
+    no_bid_liquidity: '无买一·继续挂起',
+    bid_depth_below_one_lot: '买一不足一手·继续挂起',
+    suspended: '停牌·继续挂起',
+    quote_missing: '报价缺失·继续挂起',
+  };
+  const exitRows = payload.exit_queue || [];
+  const exitsBox = $('#live-exits');
+  exitsBox.hidden = !exitRows.length;
+  exitsBox.innerHTML = exitRows.map((row) => {
+    const check = row.sellability || {};
+    const reasons = (row.reasons || [])
+      .map((reason) => exitReasonText[reason] || reason).join('、');
+    const state = check.sellable
+      ? `可卖 @ ¥${Number(check.exit_price).toFixed(2)}`
+      : (sellStateText[check.reason] || '待09:36后检查买盘');
+    return `<article class="live-exit ${check.sellable ? 'sellable' : 'pending'}">
+      <strong>卖出 ${escapeHtml(row.code)} ${escapeHtml(row.name || '')}</strong>
+      <span>${escapeHtml(reasons)}</span>
+      <small>${escapeHtml(state)} · T+1</small>
+    </article>`;
+  }).join('');
+
   const final = payload.final_recommendation || {};
+  const entryRows = payload.entry_recommendations || [];
   const finalCandidate = final.candidate || {};
   const finalBox = $('#live-final');
   if (final.status === 'recommended') {
     finalBox.className = 'live-final recommended';
-    finalBox.innerHTML = `<strong>最终推荐</strong><span>${
+    finalBox.innerHTML = `<strong>买入建议${entryRows.length > 1
+      ? `（${entryRows.length}只）` : ''}</strong><span>${
       escapeHtml(finalCandidate.code || '')} ${
       escapeHtml(finalCandidate.name || '')}</span><small>${
       final.source === 'v555_continuation'
@@ -2024,8 +2067,9 @@ function renderLive(payload) {
       + '<small>09:36已入队，等待09:37可买性确认</small>';
   } else {
     finalBox.className = 'live-final cash';
-    finalBox.innerHTML = '<strong>最终建议</strong><span>空仓</span>'
-      + '<small>候选未通过完整门控</small>';
+    finalBox.innerHTML = '<strong>买入建议</strong><span>不新增</span>'
+      + `<small>${positions.length >= (account.maximum_positions ?? 2)
+        ? '两个持仓槽位均已占用' : '候选未通过完整门控'}</small>`;
   }
   const selectedV555 = payload.selected || [];
   const v555Candidates = selectedV555.length
@@ -2087,8 +2131,6 @@ function renderLive(payload) {
           <span class="live-code">${escapeHtml(row.code)}</span>
           <span class="live-name">${escapeHtml(row.name || '')}</span>
           ${chosen ? '<span class="live-choice">推荐</span>' : ''}
-          ${row.triple_resonance
-            ? '<span class="live-resonance">板块 + ETF共振</span>' : ''}
         </div>
         <div class="live-card-grid">
           <div class="live-metric"><span>09:35 涨幅</span>
@@ -2159,15 +2201,11 @@ function renderLive(payload) {
     : '<div class="live-pool-empty">当前没有符合模式的股票</div>';
 
   const market = payload.market || {};
-  const etfThemes = (payload.etf_signal?.top_themes || [])
-    .map((row) => row.name || row.tag)
-    .slice(0, 5);
   $('#live-market').textContent = market.valid_count == null ? ''
     : `市场均涨 ${signedPct(market.mean_return)} · 强势比 ${pct(market.strong_ratio)}`
       + `（${market.strong_count}/${market.valid_count}）`
       + ` · 初选 ${payload.stages?.before_confirmation ?? '--'}`
       + ` → 确认 ${payload.stages?.confirmed ?? '--'}`
-      + (etfThemes.length ? ` · ETF主题Top5：${etfThemes.join('、')}` : '')
       + (payload.verification
         ? ` · 权威候选：${((payload.verification.authoritative_codes || []).join('、') || '无')}`
         : '');
