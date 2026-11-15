@@ -8,6 +8,14 @@ let REVIEW_DATES = [];
 let REVIEW_CURRENT = { recommendations: [], candidates: [] };
 let REVIEW_TOUCHED = false;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
+const PAPER_API_BASE_KEY = 'awakening.paperApi.base';
+const PAPER_API_TOKEN_KEY = 'awakening.paperApi.token';
+const PAPER_API_DEFAULT_BASE = 'http://127.0.0.1:8765';
+let PAPER_STATE = null;
+let PAPER_API_ONLINE = false;
+let PAPER_STATUS_TEXT = '';
+let PAPER_STATUS_KIND = '';
+let PAPER_ACCOUNT_VIEW = 'automatic';
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -221,7 +229,7 @@ const EXIT_REASON_LABELS = {
   maximum_hold: '持仓到期',
   unresolved_exit_total_loss: '退出失败·全损记账',
   sector_t1_close: '次日收盘退出',
-  v555_causal_exit: 'V555因果退出',
+  v555_causal_exit: '强势追涨因果退出',
 };
 const EXIT_REASON_DETAILS = {
   weakness: '09:35当日跌幅≤-1.5%',
@@ -229,8 +237,8 @@ const EXIT_REASON_DETAILS = {
   trend_break: '09:35跌破动态MA5，且个股、市场同时为负',
   maximum_hold: '持仓达到8个交易日',
   unresolved_exit_total_loss: '无法完成退出，按全损记账',
-  sector_t1_close: '最强竞价板块补充策略于次一交易日收盘退出',
-  v555_causal_exit: 'V555冻结风险规则触发退出',
+  sector_t1_close: '板块补充策略于次一交易日收盘退出',
+  v555_causal_exit: '强势追涨冻结风险规则触发退出',
 };
 const exitReasonText = (reason, detailed = false) => {
   const value = String(reason || '');
@@ -1564,7 +1572,7 @@ const reviewModeLabel = row => (
   row.mode_label
   || (
     row.mode_id === 'strongest_sector_complement'
-      ? '最强竞价板块补充' : 'V555强势追涨'
+      ? '板块补充' : '强势追涨'
   )
 );
 
@@ -1578,7 +1586,7 @@ function reviewDataForDay(day) {
     .map(row => ({
       ...row,
       mode_id: row.mode_id || 'v555_continuation',
-      mode_label: row.mode_label || 'V555强势追涨',
+      mode_label: row.mode_label || '强势追涨',
     }));
   const parallelCandidates = (
     DATA.parallel_candidate_rows || []
@@ -1659,7 +1667,7 @@ function reviewDataForDay(day) {
         ) ? 'candidates_ready' : 'no_confirmed_candidate',
         detail: candidates.some(
           row => row.mode_id === 'v555_continuation'
-        ) ? '实时V555候选已生成' : '实时V555无确认候选',
+        ) ? '实时强势追涨候选已生成' : '实时强势追涨无确认候选',
       },
       strongest_sector: {
         status: candidates.some(
@@ -1667,7 +1675,7 @@ function reviewDataForDay(day) {
         ) ? 'candidate_ready' : 'unavailable',
         detail: candidates.some(
           row => row.mode_id === 'strongest_sector_complement'
-        ) ? '实时最强竞价候选已生成' : '实时最强竞价候选不可用',
+        ) ? '实时板块补充候选已生成' : '实时板块补充候选不可用',
       },
     },
     live: true,
@@ -1733,7 +1741,7 @@ function renderDailyReview() {
       winner ? 'profit' : '',
     ),
     kpi('模式匹配', String(candidates.length), '当日全部候选'),
-    kpi('策略检查', '2路', 'V555 + 最强竞价'),
+    kpi('策略检查', '2路', '强势追涨 + 板块补充'),
     kpi(
       '推荐结果',
       winner && finiteNumber(winner.net_return)
@@ -1770,13 +1778,13 @@ function renderDailyReview() {
   const statusRows = [];
   if (!candidateModes.has('v555_continuation')) {
     statusRows.push({
-      label: 'V555强势追涨',
+      label: '强势追涨',
       detail: dayStatus.v555?.detail || '当日无确认候选',
     });
   }
   if (!candidateModes.has('strongest_sector_complement')) {
     statusRows.push({
-      label: '最强竞价板块独立候选',
+      label: '板块补充独立候选',
       detail: dayStatus.strongest_sector?.detail || '当日无有效候选',
     });
   }
@@ -1842,8 +1850,8 @@ function renderFusionOverview() {
       pct(overall.coverage),
       `${overall.trade_days}/${overall.trading_days}个交易日`,
     ),
-    kpi('V555主策略', String(v555Trades), '实际可交易机会'),
-    kpi('板块补充', String(sectorTrades), '仅填补V555空缺日'),
+    kpi('强势追涨主策略', String(v555Trades), '实际可交易机会'),
+    kpi('板块补充', String(sectorTrades), '仅填补强势追涨空缺日'),
     kpi(
       '每日最终建议',
       '≤1只',
@@ -1856,13 +1864,13 @@ function renderFusionOverview() {
   );
   $('#fusion-annual-table').innerHTML = `
     <thead><tr><th>年份</th><th>覆盖交易日</th><th>覆盖率</th>
-      <th>V555逐笔和</th><th>板块补充逐笔和</th>
+      <th>强势追涨逐笔和</th><th>板块补充逐笔和</th>
       <th>全部机会逐笔和（非账户收益）</th></tr></thead>
     <tbody>${fusion.annual.map(row => `<tr>
       <td data-label="年份">${row.year}</td>
       <td data-label="覆盖交易日">${row.trade_days}/${row.trading_days}</td>
       <td data-label="覆盖率">${pct(row.coverage)}</td>
-      <td data-label="V555逐笔和">${row.v555_trades}笔 · Σ ${
+      <td data-label="强势追涨逐笔和">${row.v555_trades}笔 · Σ ${
         signedPct(row.v555_sum_return)}</td>
       <td data-label="板块补充逐笔和">${row.sector_trades}笔 · Σ ${
         signedPct(row.sector_sum_return)}</td>
@@ -1933,6 +1941,21 @@ function bind() {
     'change', event => openMarketDate(event.target.value));
   $('#refresh').addEventListener('click', () => location.reload());
   window.addEventListener('resize', () => MARKET_CHART?.resize());
+  $('#live-paper-panel').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    button.disabled = true;
+    try {
+      await handlePaperAction(button);
+    } catch (error) {
+      PAPER_API_ONLINE = false;
+      PAPER_STATUS_TEXT = `操作失败：${error.message}`;
+      PAPER_STATUS_KIND = 'err';
+      renderPaperPanel();
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 async function start() {
@@ -1965,7 +1988,7 @@ async function start() {
 /* ===== 今日实时候选（独立 live_v555.json，非权威，禁止自动下单） ===== */
 const LIVE_STATUS = {
   shadow_candidates_ready: { label: '实时影子 · 待盘后复核', cls: '' },
-  sector_candidate_ready: { label: '最强竞价候选 · 待盘后复核', cls: '' },
+  sector_candidate_ready: { label: '板块补充候选 · 待盘后复核', cls: '' },
   market_gate_blocked: { label: '市场门未通过 · 今日空仓', cls: 'flat' },
   shadow_abstain: { label: '09:36确认后无候选 · 今日空仓', cls: 'flat' },
   verified_match: { label: 'SuperMind 权威复核一致', cls: 'verified' },
@@ -1984,13 +2007,14 @@ const liveDayText = (value) => {
 const liveWan = (value) => (Number.isFinite(Number(value))
   ? `${(Number(value) / 1e4).toFixed(1)}万` : '--');
 
-function renderLive(payload) {
+function renderLive(payload, options = {}) {
   const banner = $('#live-banner');
   if (!payload || ![
     'awakening-v555-live-candidates-v1',
     'awakening-v555-live-candidates-v2',
   ].includes(payload.schema)) {
     banner.hidden = true;
+    $('#live-paper-panel').hidden = true;
     return;
   }
   LIVE_DATA = payload;
@@ -2003,16 +2027,40 @@ function renderLive(payload) {
   chip.className = `live-chip ${meta.cls}`.trim();
   $('#live-dot').className = `live-dot ${meta.cls}`.trim();
 
-  const account = payload.strategy_account || {};
+  // 自动账本可回退到公开快照；人工账本只从本机 API 读取，绝不公开发布。
+  const automaticAccount = PAPER_STATE?.automatic
+    || payload.strategy_account || {};
+  const account = PAPER_ACCOUNT_VIEW === 'manual'
+    ? (PAPER_STATE?.manual || {})
+    : automaticAccount;
   const positions = account.positions || [];
+  const paper = account.summary || {};
+  const pendingOrders = account.pending_orders
+    || (account.orders || []).filter((row) => row.status === 'pending');
+  const paperProfit = Number(paper.total_profit || 0);
+  const paperMode = PAPER_ACCOUNT_VIEW === 'manual'
+    ? '人工账户' : '自动 V555';
   const accountBox = $('#live-account');
   accountBox.innerHTML = `
-    <strong>策略持仓 ${positions.length}/${account.maximum_positions ?? 2}</strong>
+    <strong>模拟盘·${paperMode}｜持仓 ${positions.length}/${
+      account.maximum_positions ?? 2}</strong>
     <span>${positions.length
       ? positions.map((row) => `${
         escapeHtml(row.code)} ${escapeHtml(row.name || '')} · 成本 ¥${
-        Number(row.entry_price).toFixed(2)}`).join('｜')
-      : '当前无持仓'}</span>`;
+        Number(row.entry_price).toFixed(2)} × ${
+        Number(row.quantity || 0)}`).join('｜')
+      : '当前无持仓'}｜总资产 ¥${
+        Number(paper.equity || account.initial_capital || 0).toFixed(2)
+      }｜<b class="${tone(paperProfit)}">盈亏 ${
+        paperProfit >= 0 ? '+' : ''}${paperProfit.toFixed(2)}（${
+        pct(Number(paper.total_return || 0))}）</b>${
+        pendingOrders.length
+          ? `｜待确认 ${pendingOrders.length} 笔：${
+            pendingOrders.map((row) => `${
+              row.side === 'sell' ? '卖' : '买'} ${
+              escapeHtml(row.code)} [${escapeHtml(row.order_id)}]`
+            ).join('；')}`
+          : ''}</span>`;
 
   const exitReasonText = {
     weakness: '09:35较昨收≤-1.5%',
@@ -2058,7 +2106,7 @@ function renderLive(payload) {
       escapeHtml(finalCandidate.code || '')} ${
       escapeHtml(finalCandidate.name || '')}</span><small>${
       final.source === 'v555_continuation'
-        ? 'V555 独立候选' : '最强竞价板块独立候选'
+        ? '强势追涨独立候选' : '板块补充独立候选'
     } · ${Number(finalCandidate.queue_rank) > 1
       ? `前${Number(finalCandidate.queue_rank) - 1}只不可买后顺延`
       : '队列首选'} · 09:37可买性确认</small>`;
@@ -2071,7 +2119,8 @@ function renderLive(payload) {
   } else {
     finalBox.className = 'live-final cash';
     finalBox.innerHTML = '<strong>买入建议</strong><span>不新增</span>'
-      + `<small>${positions.length >= (account.maximum_positions ?? 2)
+      + `<small>${(automaticAccount.positions || []).length
+        >= (automaticAccount.maximum_positions ?? 2)
         ? '两个持仓槽位均已占用' : '候选未通过完整门控'}</small>`;
   }
   const selectedV555 = payload.selected || [];
@@ -2108,7 +2157,7 @@ function renderLive(payload) {
     cards.innerHTML = candidates.map((row) => {
       if (row.unavailable) {
         const sourceLabel = row.candidate_source === 'v555'
-          ? 'V555 独立候选' : '最强竞价板块独立候选';
+          ? '强势追涨独立候选' : '板块补充独立候选';
         return `<article class="live-card unavailable">
           <div class="live-card-top">
             <span class="live-rank">${sourceLabel}</span>
@@ -2126,7 +2175,7 @@ function renderLive(payload) {
             && row.candidate_source === 'strongest_sector')
         );
       const sourceLabel = row.candidate_source === 'v555'
-        ? `V555 #${row.rank}` : `最强竞价 #1 · ${row.sector_name || '--'}`;
+        ? `强势追涨 #${row.rank}` : `板块补充 #1 · ${row.sector_name || '--'}`;
       return `
       <article class="live-card ${chosen ? 'chosen' : ''}">
         <div class="live-card-top">
@@ -2155,8 +2204,8 @@ function renderLive(payload) {
         ${row.candidate_source === 'strongest_sector'
           ? `<div class="live-gate ${row.gate_passed ? 'passed' : ''}">${
             row.gate_passed
-              ? '最强竞价板块独立门控通过'
-              : '最强竞价板块独立门控未通过'
+              ? '板块补充独立门控通过'
+              : '板块补充独立门控未通过'
           }</div>` : ''}
       </article>`;
     }).join('');
@@ -2217,6 +2266,298 @@ function renderLive(payload) {
   $('#live-updated').textContent = stamp
     ? `信号 ${dateTime(payload.generated_at)} · 发布 ${dateTime(stamp)}` : '';
   if (DATA) refreshReviewDates(!REVIEW_TOUCHED);
+  renderPaperPanel();
+  if (!options.skipPaperSync) void refreshPaperSilently();
+}
+
+/* ===== 本机模拟盘控制面（127.0.0.1 接口，仅模拟，不会真实下单） ===== */
+function paperConfig() {
+  return {
+    base: (localStorage.getItem(PAPER_API_BASE_KEY)
+      || PAPER_API_DEFAULT_BASE).replace(/\/+$/, ''),
+    token: localStorage.getItem(PAPER_API_TOKEN_KEY) || '',
+  };
+}
+
+async function paperApi(path, body) {
+  const { base, token } = paperConfig();
+  if (!token) throw new Error('未配置本机接口令牌');
+  const response = await fetch(`${base}${path}`, {
+    method: body ? 'POST' : 'GET',
+    cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    // 204 等空响应体
+  }
+  if (!response.ok) {
+    throw new Error(payload.error || `本机接口 HTTP ${response.status}`);
+  }
+  return payload;
+}
+
+function paperAccount(kind) {
+  if (kind === 'manual') return PAPER_STATE?.manual || null;
+  return PAPER_STATE?.automatic || LIVE_DATA?.strategy_account || null;
+}
+
+function pendingOrders(account) {
+  if (Array.isArray(account?.orders)) {
+    return account.orders.filter((row) => row.status === 'pending');
+  }
+  return account?.pending_orders || [];
+}
+
+function localDateTimeValue() {
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+  return now.toISOString().slice(0, 16);
+}
+
+function renderPaperPanel() {
+  const panel = $('#live-paper-panel');
+  if (!panel || !LIVE_DATA) return;
+  panel.hidden = false;
+  // 轮询重渲染时若用户正在输入，保留面板不重建，避免价格/令牌被清空。
+  if (document.activeElement?.matches(
+    '#live-paper-panel input, #live-paper-panel select'
+  )) return;
+  const { base, token } = paperConfig();
+  const account = paperAccount(PAPER_ACCOUNT_VIEW);
+  const manual = paperAccount('manual');
+  const pending = pendingOrders(manual);
+  const orderRows = pending.length
+    ? pending.map((row) => `
+      <div class="paper-order" data-order-id="${escapeHtml(row.order_id)}">
+        <span class="paper-order-side ${row.side}">${
+          row.side === 'buy' ? '买入' : '卖出'}</span>
+        <span class="paper-order-code">${escapeHtml(row.code)}</span>
+        <span class="paper-order-name">${escapeHtml(row.name || '')}</span>
+        <span class="paper-order-ref">参考价 ¥${
+          Number(row.reference_price).toFixed(2)}</span>
+        <label class="paper-field">成交价
+          <input type="number" step="0.01" min="0.01" data-field="price"
+                 value="${Number(row.reference_price).toFixed(2)}">
+        </label>
+        ${row.side === 'buy' ? `
+        <label class="paper-field">股数
+          <input type="number" step="100" min="100" data-field="quantity"
+                 placeholder="${row.suggested_quantity || ''}">
+        </label>` : ''}
+        <button type="button" data-action="fill"
+                data-order-id="${escapeHtml(row.order_id)}">确认成交</button>
+        <button type="button" class="ghost" data-action="reject"
+                data-order-id="${escapeHtml(row.order_id)}">拒绝</button>
+      </div>`).join('')
+    : '<div class="paper-empty">当前没有 V555 待确认卖点</div>';
+  const positionRows = (manual?.positions || []).length
+    ? manual.positions.map((row) => `
+      <div class="paper-position">
+        <div>
+          <strong>${escapeHtml(row.code)} ${escapeHtml(row.name || '')}</strong>
+          <small>成本 ¥${Number(row.entry_price).toFixed(2)} × ${
+            Number(row.quantity)}｜最新 ¥${
+            Number(row.last_price || row.entry_price).toFixed(2)}</small>
+        </div>
+        <label class="paper-field">卖出价
+          <input type="number" step="0.01" min="0.01"
+                 data-field="sell-price" data-code="${escapeHtml(row.code)}"
+                 value="${Number(row.last_price || row.entry_price).toFixed(2)}">
+        </label>
+        <button type="button" data-action="manual-sell"
+                data-code="${escapeHtml(row.code)}">回填卖出</button>
+      </div>`).join('')
+    : '<div class="paper-empty">人工账户当前无持仓</div>';
+  const automaticSummary = paperAccount('automatic')?.summary || {};
+  const manualSummary = manual?.summary || {};
+  const accountContent = PAPER_ACCOUNT_VIEW === 'manual'
+    ? `
+      <div class="paper-section-title">
+        <strong>人工买入回填</strong>
+        <span>买入后由 V555 持续监控退出条件</span>
+      </div>
+      <div class="paper-buy-form">
+        <label class="paper-field">代码
+          <input type="text" inputmode="numeric" maxlength="6"
+                 data-field="buy-code" placeholder="000001"></label>
+        <label class="paper-field">名称
+          <input type="text" data-field="buy-name" placeholder="可选"></label>
+        <label class="paper-field">成交价
+          <input type="number" step="0.01" min="0.01"
+                 data-field="buy-price"></label>
+        <label class="paper-field">股数
+          <input type="number" step="100" min="100"
+                 data-field="buy-quantity"></label>
+        <label class="paper-field">成交时间
+          <input type="datetime-local" data-field="buy-filled-at"
+                 value="${localDateTimeValue()}"></label>
+        <button type="button" data-action="manual-buy">回填买入</button>
+      </div>
+      <div class="paper-section-title">
+        <strong>人工持仓</strong>
+        <span>真实选择可与自动账户不同</span>
+      </div>
+      <div class="paper-positions">${positionRows}</div>
+      <div class="paper-section-title">
+        <strong>V555 待确认卖点</strong>
+        <span>系统只监控，需人工确认成交</span>
+      </div>
+      <div class="paper-orders">${orderRows}</div>`
+    : `
+      <div class="paper-readonly">
+        <strong>自动账户由冻结 V555 程序独立执行</strong>
+        <span>总资产 ¥${money(automaticSummary.equity || 0)}｜持仓 ${
+          automaticSummary.open_positions ?? 0}/2｜待办 ${
+          automaticSummary.pending_orders ?? 0}</span>
+        <small>此页只读。人工回填不会改变自动账户的候选、买点、卖点或收益。</small>
+      </div>`;
+  panel.innerHTML = `
+    <div class="paper-head">
+      <strong>并行模拟账户 · 本机接口（不会真实下单）</strong>
+      <div class="paper-mode-switch" role="tablist" aria-label="账户视图">
+        <button type="button"
+                class="paper-mode-btn ${
+                  PAPER_ACCOUNT_VIEW === 'automatic' ? 'active' : ''}"
+                data-action="account-view"
+                data-account-view="automatic">自动 V555</button>
+        <button type="button"
+                class="paper-mode-btn ${
+                  PAPER_ACCOUNT_VIEW === 'manual' ? 'active' : ''}"
+                data-action="account-view"
+                data-account-view="manual">人工账户</button>
+      </div>
+    </div>
+    <div class="paper-config">
+      <label class="paper-field">接口地址
+        <input type="text" data-field="base" spellcheck="false"
+               value="${escapeHtml(base)}"></label>
+      <label class="paper-field grow">令牌
+        <input type="password" data-field="token" spellcheck="false"
+               placeholder="粘贴 token 子命令输出的本机令牌"
+               value="${escapeHtml(token)}"></label>
+      <button type="button" data-action="save-config">保存配置</button>
+      <span class="paper-conn ${PAPER_API_ONLINE ? 'online' : 'offline'}">
+        ${PAPER_API_ONLINE ? '本机已连接' : '本机未连接'}</span>
+    </div>
+    <div class="paper-account-strip">
+      <span>自动 ¥${money(automaticSummary.equity || 0)}</span>
+      <span>人工 ¥${money(manualSummary.equity || 0)}</span>
+      <span>双账本互不影响</span>
+    </div>
+    ${accountContent}
+    ${PAPER_STATUS_TEXT
+      ? `<div class="paper-status ${PAPER_STATUS_KIND}">${
+        escapeHtml(PAPER_STATUS_TEXT)}</div>` : ''}
+    <div class="paper-hint">自动账户持续按冻结 V555 执行；人工账户记录你的实际选择，
+      同时沿用 V555 的 T+1、09:35走弱、趋势破坏和7%最高水位回撤监控。
+      两套账本均强制 simulation_only，禁止真实下单。</div>`;
+}
+
+async function syncPaperState() {
+  PAPER_STATE = await paperApi('/state');
+  PAPER_API_ONLINE = true;
+}
+
+async function refreshPaperSilently() {
+  if (!paperConfig().token) {
+    PAPER_API_ONLINE = false;
+    renderPaperPanel();
+    return;
+  }
+  try {
+    await syncPaperState();
+    renderLive(LIVE_DATA, { skipPaperSync: true });
+  } catch {
+    PAPER_API_ONLINE = false;
+    renderPaperPanel();
+  }
+}
+
+async function handlePaperAction(button) {
+  const panel = $('#live-paper-panel');
+  const action = button.dataset.action;
+  if (action === 'account-view') {
+    PAPER_ACCOUNT_VIEW = button.dataset.accountView;
+    button.blur();
+    renderLive(LIVE_DATA, { skipPaperSync: true });
+    return;
+  }
+  if (action === 'save-config') {
+    const newBase = panel.querySelector('[data-field="base"]').value
+      .trim().replace(/\/+$/, '');
+    const newToken = panel.querySelector('[data-field="token"]').value.trim();
+    localStorage.setItem(
+      PAPER_API_BASE_KEY, newBase || PAPER_API_DEFAULT_BASE);
+    if (newToken) localStorage.setItem(PAPER_API_TOKEN_KEY, newToken);
+    else localStorage.removeItem(PAPER_API_TOKEN_KEY);
+    PAPER_STATUS_TEXT = '接口配置已保存到本机浏览器';
+    PAPER_STATUS_KIND = 'ok';
+    await refreshPaperSilently();
+    return;
+  }
+  if (!paperConfig().token) {
+    PAPER_STATUS_TEXT = '请先填写并保存本机接口令牌';
+    PAPER_STATUS_KIND = 'err';
+    renderPaperPanel();
+    return;
+  }
+  if (action === 'manual-buy') {
+    const code = panel.querySelector('[data-field="buy-code"]').value.trim();
+    const name = panel.querySelector('[data-field="buy-name"]').value.trim();
+    const price = Number(
+      panel.querySelector('[data-field="buy-price"]').value);
+    const quantity = Number(
+      panel.querySelector('[data-field="buy-quantity"]').value);
+    const filledAt = panel.querySelector(
+      '[data-field="buy-filled-at"]').value;
+    if (!/^\d{6}$/.test(code)) throw new Error('请输入 6 位股票代码');
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('请输入大于 0 的买入价');
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity % 100) {
+      throw new Error('买入股数必须为 100 的正整数倍');
+    }
+    await paperApi('/manual/buy', {
+      code, name, price, quantity, filled_at: filledAt || undefined,
+    });
+    PAPER_STATUS_TEXT = `${code} 人工买入已入账`;
+    PAPER_STATUS_KIND = 'ok';
+  } else if (action === 'manual-sell') {
+    const code = button.dataset.code;
+    const price = Number(panel.querySelector(
+      `[data-field="sell-price"][data-code="${code}"]`).value);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('请输入大于 0 的卖出价');
+    }
+    await paperApi('/manual/sell', { code, price });
+    PAPER_STATUS_TEXT = `${code} 人工卖出已入账`;
+    PAPER_STATUS_KIND = 'ok';
+  } else if (action === 'fill') {
+    const card = button.closest('.paper-order');
+    const price = Number(card.querySelector('[data-field="price"]').value);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('请输入大于 0 的有效成交价');
+    }
+    const qtyInput = card.querySelector('[data-field="quantity"]');
+    const quantity = qtyInput?.value ? Number(qtyInput.value) : undefined;
+    await paperApi('/manual/fill', {
+      order_id: button.dataset.orderId, price, quantity,
+    });
+    PAPER_STATUS_TEXT = '成交已按你确认的价格入账';
+    PAPER_STATUS_KIND = 'ok';
+  } else if (action === 'reject') {
+    await paperApi('/manual/reject', { order_id: button.dataset.orderId });
+    PAPER_STATUS_TEXT = '该推荐已拒绝，不会入账';
+    PAPER_STATUS_KIND = 'ok';
+  }
+  await syncPaperState();
+  renderLive(LIVE_DATA, { skipPaperSync: true });
 }
 
 async function loadLive() {
