@@ -8,9 +8,7 @@ let REVIEW_DATES = [];
 let REVIEW_CURRENT = { recommendations: [], candidates: [] };
 let REVIEW_TOUCHED = false;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
-const PAPER_API_BASE_KEY = 'awakening.paperApi.base';
-const PAPER_API_TOKEN_KEY = 'awakening.paperApi.token';
-const PAPER_API_DEFAULT_BASE = 'http://127.0.0.1:8765';
+const PAPER_API_BASE = 'http://127.0.0.1:8765';
 let PAPER_STATE = null;
 let PAPER_API_ONLINE = false;
 let PAPER_STATUS_TEXT = '';
@@ -2270,23 +2268,12 @@ function renderLive(payload, options = {}) {
   if (!options.skipPaperSync) void refreshPaperSilently();
 }
 
-/* ===== 本机模拟盘控制面（127.0.0.1 接口，仅模拟，不会真实下单） ===== */
-function paperConfig() {
-  return {
-    base: (localStorage.getItem(PAPER_API_BASE_KEY)
-      || PAPER_API_DEFAULT_BASE).replace(/\/+$/, ''),
-    token: localStorage.getItem(PAPER_API_TOKEN_KEY) || '',
-  };
-}
-
+/* ===== 本机模拟盘控制面（固定 loopback，仅模拟，不会真实下单） ===== */
 async function paperApi(path, body) {
-  const { base, token } = paperConfig();
-  if (!token) throw new Error('未配置本机接口令牌');
-  const response = await fetch(`${base}${path}`, {
+  const response = await fetch(`${PAPER_API_BASE}${path}`, {
     method: body ? 'POST' : 'GET',
     cache: 'no-store',
     headers: {
-      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -2324,12 +2311,10 @@ function renderPaperPanel() {
   const panel = $('#live-paper-panel');
   if (!panel || !LIVE_DATA) return;
   panel.hidden = false;
-  // 轮询重渲染时若用户正在输入，保留面板不重建，避免价格/令牌被清空。
+  // 轮询重渲染时若用户正在输入，保留面板不重建，避免回填内容被清空。
   if (document.activeElement?.matches(
     '#live-paper-panel input, #live-paper-panel select'
   )) return;
-  const { base, token } = paperConfig();
-  const account = paperAccount(PAPER_ACCOUNT_VIEW);
   const manual = paperAccount('manual');
   const pending = pendingOrders(manual);
   const orderRows = pending.length
@@ -2379,8 +2364,8 @@ function renderPaperPanel() {
   const accountContent = PAPER_ACCOUNT_VIEW === 'manual'
     ? `
       <div class="paper-section-title">
-        <strong>人工买入回填</strong>
-        <span>买入后由 V555 持续监控退出条件</span>
+        <strong>盘后人工买入回填</strong>
+        <span>回填后由 V555 持续监控退出条件</span>
       </div>
       <div class="paper-buy-form">
         <label class="paper-field">代码
@@ -2419,7 +2404,11 @@ function renderPaperPanel() {
       </div>`;
   panel.innerHTML = `
     <div class="paper-head">
-      <strong>并行模拟账户 · 本机接口（不会真实下单）</strong>
+      <div class="paper-head-title">
+        <strong>并行模拟账户（不会真实下单）</strong>
+        <span class="paper-conn ${PAPER_API_ONLINE ? 'online' : 'offline'}">
+          ${PAPER_API_ONLINE ? '本机账本已连接' : '本机账本连接中'}</span>
+      </div>
       <div class="paper-mode-switch" role="tablist" aria-label="账户视图">
         <button type="button"
                 class="paper-mode-btn ${
@@ -2432,18 +2421,6 @@ function renderPaperPanel() {
                 data-action="account-view"
                 data-account-view="manual">人工账户</button>
       </div>
-    </div>
-    <div class="paper-config">
-      <label class="paper-field">接口地址
-        <input type="text" data-field="base" spellcheck="false"
-               value="${escapeHtml(base)}"></label>
-      <label class="paper-field grow">令牌
-        <input type="password" data-field="token" spellcheck="false"
-               placeholder="粘贴 token 子命令输出的本机令牌"
-               value="${escapeHtml(token)}"></label>
-      <button type="button" data-action="save-config">保存配置</button>
-      <span class="paper-conn ${PAPER_API_ONLINE ? 'online' : 'offline'}">
-        ${PAPER_API_ONLINE ? '本机已连接' : '本机未连接'}</span>
     </div>
     <div class="paper-account-strip">
       <span>自动 ¥${money(automaticSummary.equity || 0)}</span>
@@ -2465,11 +2442,6 @@ async function syncPaperState() {
 }
 
 async function refreshPaperSilently() {
-  if (!paperConfig().token) {
-    PAPER_API_ONLINE = false;
-    renderPaperPanel();
-    return;
-  }
   try {
     await syncPaperState();
     renderLive(LIVE_DATA, { skipPaperSync: true });
@@ -2486,25 +2458,6 @@ async function handlePaperAction(button) {
     PAPER_ACCOUNT_VIEW = button.dataset.accountView;
     button.blur();
     renderLive(LIVE_DATA, { skipPaperSync: true });
-    return;
-  }
-  if (action === 'save-config') {
-    const newBase = panel.querySelector('[data-field="base"]').value
-      .trim().replace(/\/+$/, '');
-    const newToken = panel.querySelector('[data-field="token"]').value.trim();
-    localStorage.setItem(
-      PAPER_API_BASE_KEY, newBase || PAPER_API_DEFAULT_BASE);
-    if (newToken) localStorage.setItem(PAPER_API_TOKEN_KEY, newToken);
-    else localStorage.removeItem(PAPER_API_TOKEN_KEY);
-    PAPER_STATUS_TEXT = '接口配置已保存到本机浏览器';
-    PAPER_STATUS_KIND = 'ok';
-    await refreshPaperSilently();
-    return;
-  }
-  if (!paperConfig().token) {
-    PAPER_STATUS_TEXT = '请先填写并保存本机接口令牌';
-    PAPER_STATUS_KIND = 'err';
-    renderPaperPanel();
     return;
   }
   if (action === 'manual-buy') {

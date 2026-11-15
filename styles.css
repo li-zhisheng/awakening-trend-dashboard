@@ -700,8 +700,8 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   .detail-strip div:nth-child(2) { border-right: 0; }
   .detail-strip div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .paper-head,
-  .paper-config,
   .paper-position { align-items: stretch; flex-direction: column; }
+  .paper-head-title { justify-content: space-between; }
   .paper-mode-switch { width: 100%; }
   .paper-mode-btn { flex: 1; }
   .paper-field,
@@ -955,6 +955,11 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   justify-content: space-between;
   gap: 8px;
 }
+.paper-head-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .paper-mode-switch { display: inline-flex; gap: 6px; }
 .paper-mode-btn {
   padding: 5px 14px;
@@ -970,15 +975,7 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: var(--red);
   font-weight: 700;
 }
-.paper-config {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
 .paper-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.paper-field.grow { flex: 1 1 220px; }
 .paper-field input {
   width: 130px;
   padding: 5px 8px;
@@ -988,8 +985,6 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: #e6edf0;
   font-size: 12px;
 }
-.paper-field.grow input { flex: 1; width: auto; }
-.paper-config button,
 .paper-order button,
 .paper-position button,
 .paper-buy-form button {
@@ -1004,7 +999,6 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
 .paper-order button:hover,
 .paper-position button:hover,
 .paper-buy-form button:hover,
-.paper-config button:hover,
 .paper-mode-btn:hover { border-color: var(--muted); }
 .paper-order button.ghost { color: var(--muted); }
 .paper-conn { font-weight: 700; }
