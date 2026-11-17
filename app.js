@@ -2355,6 +2355,10 @@ function renderPaperPanel() {
                  data-field="sell-price" data-code="${escapeHtml(row.code)}"
                  value="${Number(row.last_price || row.entry_price).toFixed(2)}">
         </label>
+        <label class="paper-field">卖出时间
+          <input type="datetime-local" data-field="sell-filled-at"
+                 data-code="${escapeHtml(row.code)}"
+                 value="${localDateTimeValue()}"></label>
         <button type="button" data-action="manual-sell"
                 data-code="${escapeHtml(row.code)}">回填卖出</button>
       </div>`).join('')
@@ -2383,6 +2387,26 @@ function renderPaperPanel() {
           <input type="datetime-local" data-field="buy-filled-at"
                  value="${localDateTimeValue()}"></label>
         <button type="button" data-action="manual-buy">回填买入</button>
+      </div>
+      <div class="paper-section-title">
+        <strong>历史持仓导入</strong>
+        <span>启用本账本前已持有的股票，直接入仓、不生成订单流水</span>
+      </div>
+      <div class="paper-buy-form paper-import-form">
+        <label class="paper-field">代码
+          <input type="text" inputmode="numeric" maxlength="6"
+                 data-field="import-code" placeholder="000001"></label>
+        <label class="paper-field">名称
+          <input type="text" data-field="import-name" placeholder="可选"></label>
+        <label class="paper-field">买入日期
+          <input type="date" data-field="import-entry-day"></label>
+        <label class="paper-field">成本价
+          <input type="number" step="0.01" min="0.01"
+                 data-field="import-entry-price"></label>
+        <label class="paper-field">股数
+          <input type="number" step="100" min="100"
+                 data-field="import-quantity"></label>
+        <button type="button" data-action="manual-import">导入持仓</button>
       </div>
       <div class="paper-section-title">
         <strong>人工持仓</strong>
@@ -2481,14 +2505,45 @@ async function handlePaperAction(button) {
     });
     PAPER_STATUS_TEXT = `${code} 人工买入已入账`;
     PAPER_STATUS_KIND = 'ok';
+  } else if (action === 'manual-import') {
+    const code = panel.querySelector(
+      '[data-field="import-code"]').value.trim();
+    const name = panel.querySelector(
+      '[data-field="import-name"]').value.trim();
+    const entryDay = panel.querySelector(
+      '[data-field="import-entry-day"]').value;
+    const entryPrice = Number(panel.querySelector(
+      '[data-field="import-entry-price"]').value);
+    const quantity = Number(panel.querySelector(
+      '[data-field="import-quantity"]').value);
+    if (!/^\d{6}$/.test(code)) throw new Error('请输入 6 位股票代码');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDay)) {
+      throw new Error('请选择历史买入日期');
+    }
+    if (!Number.isFinite(entryPrice) || entryPrice <= 0) {
+      throw new Error('请输入大于 0 的成本价');
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity % 100) {
+      throw new Error('导入股数必须为 100 的正整数倍');
+    }
+    await paperApi('/manual/import', {
+      code, name, entry_day: entryDay,
+      entry_price: entryPrice, quantity,
+    });
+    PAPER_STATUS_TEXT = `${code} 历史持仓已导入`;
+    PAPER_STATUS_KIND = 'ok';
   } else if (action === 'manual-sell') {
     const code = button.dataset.code;
     const price = Number(panel.querySelector(
       `[data-field="sell-price"][data-code="${code}"]`).value);
+    const filledAt = panel.querySelector(
+      `[data-field="sell-filled-at"][data-code="${code}"]`)?.value;
     if (!Number.isFinite(price) || price <= 0) {
       throw new Error('请输入大于 0 的卖出价');
     }
-    await paperApi('/manual/sell', { code, price });
+    await paperApi('/manual/sell', {
+      code, price, filled_at: filledAt || undefined,
+    });
     PAPER_STATUS_TEXT = `${code} 人工卖出已入账`;
     PAPER_STATUS_KIND = 'ok';
   } else if (action === 'fill') {
