@@ -8,12 +8,15 @@ let REVIEW_DATES = [];
 let REVIEW_CURRENT = { recommendations: [], candidates: [] };
 let REVIEW_TOUCHED = false;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
-const PAPER_API_BASE = 'http://127.0.0.1:8765';
+const PAPER_LOCAL_ORIGIN = 'http://127.0.0.1:8765';
+const PAPER_API_BASE = location.origin === PAPER_LOCAL_ORIGIN
+  ? location.origin : PAPER_LOCAL_ORIGIN;
 let PAPER_STATE = null;
 let PAPER_API_ONLINE = false;
 let PAPER_STATUS_TEXT = '';
 let PAPER_STATUS_KIND = '';
-let PAPER_ACCOUNT_VIEW = 'automatic';
+let PAPER_ACCOUNT_VIEW = new URLSearchParams(location.search).get('account')
+  === 'manual' ? 'manual' : 'automatic';
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -2439,11 +2442,9 @@ function renderPaperPanel() {
                   PAPER_ACCOUNT_VIEW === 'automatic' ? 'active' : ''}"
                 data-action="account-view"
                 data-account-view="automatic">自动 V555</button>
-        <button type="button"
-                class="paper-mode-btn ${
-                  PAPER_ACCOUNT_VIEW === 'manual' ? 'active' : ''}"
-                data-action="account-view"
-                data-account-view="manual">人工账户</button>
+        <a class="paper-mode-btn ${
+              PAPER_ACCOUNT_VIEW === 'manual' ? 'active' : ''}"
+           href="${PAPER_LOCAL_ORIGIN}/?account=manual">人工账户</a>
       </div>
     </div>
     <div class="paper-account-strip">
@@ -2479,6 +2480,11 @@ async function handlePaperAction(button) {
   const panel = $('#live-paper-panel');
   const action = button.dataset.action;
   if (action === 'account-view') {
+    if (button.dataset.accountView === 'manual'
+        && location.origin !== PAPER_LOCAL_ORIGIN) {
+      location.assign(`${PAPER_LOCAL_ORIGIN}/?account=manual`);
+      return;
+    }
     PAPER_ACCOUNT_VIEW = button.dataset.accountView;
     button.blur();
     renderLive(LIVE_DATA, { skipPaperSync: true });
