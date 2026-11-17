@@ -1613,7 +1613,12 @@ function reviewDataForDay(day) {
       `${row.mode_id}:${row.code}`, row,
     ]),
   );
-  const candidates = (LIVE_DATA.match_pool || []).map(row => {
+  const candidates = (LIVE_DATA.match_pool || [])
+    .filter(row => !(
+      row.mode_id === 'strongest_sector_complement'
+      && row.recommendation_eligible === false
+    ))
+    .map(row => {
     const queued = queue.get(`${row.mode_id}:${row.code}`);
     return {
       ...row,
@@ -2114,7 +2119,7 @@ function renderLive(payload) {
         ? '09:36确认后无候选' : '市场门未通过',
     }];
   const sectorNode = payload.sector_candidate || {};
-  const sectorCandidate = sectorNode.candidate
+  const sectorCandidate = sectorNode.gate_passed && sectorNode.candidate
     ? [{
       ...sectorNode.candidate,
       rank: 1,
@@ -2208,7 +2213,10 @@ function renderLive(payload) {
   const queueMap = new Map(queueRows.map((row) => [
     `${row.mode_id}:${row.code}`, row,
   ]));
-  const pool = payload.match_pool || [];
+  const pool = (payload.match_pool || []).filter(row => !(
+    row.mode_id === 'strongest_sector_complement'
+    && row.recommendation_eligible === false
+  ));
   $('#live-pool-count').textContent = `${pool.length}只`;
   $('#live-pool').innerHTML = pool.length
     ? pool.map((row) => {
