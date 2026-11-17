@@ -1512,6 +1512,7 @@ function renderCandidates() {
     primary_trade: '主账户交易',
     observation_candidate: '观察候选',
     entry_unfillable: '成交受限',
+    postclose_recovered_candidate: '盘后恢复候选',
   };
   $('#candidate-table').innerHTML = `
     <thead><tr><th>日期</th><th>股票</th><th>排名</th><th>状态</th>
@@ -1539,12 +1540,15 @@ function renderCandidates() {
         <small>¥${Number(row.entry_price).toFixed(2)}</small>
       </td>
       <td class="candidate-exit">
-        <strong>${dayText(row.exit_day)} ${String(row.exit_clock).padStart(4, '0')}</strong>
+        <strong>${row.exit_day
+          ? `${dayText(row.exit_day)} ${String(row.exit_clock).padStart(4, '0')}`
+          : '待前向结果'}</strong>
         <small title="${escapeHtml(exitReasonText(row.exit_reason, true))}">
           ${escapeHtml(exitReasonText(row.exit_reason))}
         </small>
       </td>
-      <td>${row.hold_days}日</td><td class="${tone(row.net_return)}">${pct(row.net_return)}</td></tr>`).join('')}</tbody>`;
+      <td>${finiteNumber(row.hold_days) ? `${row.hold_days}日` : '--'}</td>
+      <td class="${tone(row.net_return)}">${pct(row.net_return)}</td></tr>`).join('')}</tbody>`;
   $('#candidate-table').querySelectorAll('.candidate-stock').forEach(
     button => button.addEventListener('click', () => {
       const row = DATA.candidate_rows.find(item =>
@@ -1580,16 +1584,12 @@ function reviewDataForDay(day) {
       mode_id: row.mode_id || 'v555_continuation',
       mode_label: row.mode_label || '强势追涨',
     }));
-  const recoveredCandidates = (
-    DATA.recovered_candidate_rows || []
-  ).filter(row => compactDay(row.day) === day);
   const parallelCandidates = (
     DATA.parallel_candidate_rows || []
   ).filter(row => compactDay(row.day) === day);
   if (!LIVE_DATA || compactDay(LIVE_DATA.date) !== day) {
     const candidates = [
       ...historicalCandidates,
-      ...recoveredCandidates,
       ...parallelCandidates,
     ];
     historicalRecommendations.forEach(row => {
