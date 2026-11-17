@@ -962,9 +962,6 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
 }
 .paper-mode-switch { display: inline-flex; gap: 6px; }
 .paper-mode-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   padding: 5px 14px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -972,7 +969,6 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
-  text-decoration: none;
 }
 .paper-mode-btn.active {
   border-color: var(--red);

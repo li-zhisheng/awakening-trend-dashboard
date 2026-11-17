@@ -1580,12 +1580,16 @@ function reviewDataForDay(day) {
       mode_id: row.mode_id || 'v555_continuation',
       mode_label: row.mode_label || '强势追涨',
     }));
+  const recoveredCandidates = (
+    DATA.recovered_candidate_rows || []
+  ).filter(row => compactDay(row.day) === day);
   const parallelCandidates = (
     DATA.parallel_candidate_rows || []
   ).filter(row => compactDay(row.day) === day);
   if (!LIVE_DATA || compactDay(LIVE_DATA.date) !== day) {
     const candidates = [
       ...historicalCandidates,
+      ...recoveredCandidates,
       ...parallelCandidates,
     ];
     historicalRecommendations.forEach(row => {
@@ -1721,16 +1725,22 @@ function renderDailyReview() {
   const recommendations = data.recommendations;
   const candidates = data.candidates;
   const dayStatus = data.dayStatus || {};
+  const recovered = Boolean(dayStatus.recovery);
+  const recoveredV555 = candidates.filter(
+    row => row.candidate_status === 'postclose_recovered_candidate'
+  );
   $('#review-day-title').textContent =
     `${dayText(day)}${data.live ? ' · 实时' : ''}`;
   const winner = recommendations[0];
   $('#review-kpis').innerHTML = [
     kpi(
-      '最终推荐',
-      winner ? '1只' : '空仓',
-      winner
+      recovered ? '恢复候选' : '最终推荐',
+      recovered ? `${recoveredV555.length}只` : winner ? '1只' : '空仓',
+      recovered
+        ? '按冻结V555协议盘后复算，不代表当日已执行'
+        : winner
         ? `${winner.name} ${winner.code}` : '当日没有通过完整门控',
-      winner ? 'profit' : '',
+      recoveredV555.length || winner ? 'profit' : '',
     ),
     kpi('模式匹配', String(candidates.length), '当日全部候选'),
     kpi('策略检查', '2路', '强势追涨 + 板块补充'),
