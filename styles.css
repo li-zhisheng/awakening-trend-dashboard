@@ -72,6 +72,22 @@ button { min-height: 36px; padding: 0 14px; cursor: pointer; }
 button:hover { border-color: var(--cyan); }
 button.active { border-color: var(--cyan); color: #fff; background: #25666b; }
 #refresh { width: 38px; padding: 0; font-size: 20px; }
+#repair-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 104px;
+  justify-content: center;
+}
+#repair-data:disabled { cursor: wait; opacity: 0.68; }
+.repair-status {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.repair-status.running { color: var(--cyan); }
+.repair-status.ready { color: var(--red); }
+.repair-status.error { color: var(--amber); }
 
 .view-tabs {
   max-width: 1440px;

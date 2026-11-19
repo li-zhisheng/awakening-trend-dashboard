@@ -8,6 +8,15 @@ let REVIEW_DATES = [];
 let REVIEW_CURRENT = { recommendations: [], candidates: [] };
 let REVIEW_TOUCHED = false;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
+const MAINTENANCE_API = (
+  window.AWAKENING_MAINTENANCE_API
+  || document.querySelector('meta[name="awakening-maintenance-api"]')?.content
+  || 'http://127.0.0.1:8765'
+).replace(/\/+$/, '');
+const MAINTENANCE_ACTIVE = new Set([
+  'queued', 'scanning', 'synchronizing', 'finalizing',
+]);
+let maintenanceTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -50,6 +59,102 @@ const dayText = (value) => {
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[char]));
+
+const repairDayCount = (payload) => {
+  const before = payload?.before || {};
+  return new Set([
+    ...(before.minute_repair_days || []),
+    ...(before.derivative_repair_days || []),
+  ]).size;
+};
+
+function renderMaintenance(payload, unavailable = false) {
+  const button = $('#repair-data');
+  const status = $('#repair-status');
+  if (!button || !status) return;
+  const state = unavailable ? 'unavailable' : (payload?.status || 'idle');
+  const running = MAINTENANCE_ACTIVE.has(state);
+  button.disabled = running;
+  button.querySelector('span:last-child').textContent =
+    running ? '更新中' : '补缺数据';
+  status.className = 'repair-status';
+  if (unavailable) {
+    status.textContent = '仅运行主机可操作';
+    return;
+  }
+  if (running) {
+    const labels = {
+      queued: '任务已提交',
+      scanning: '正在扫描缺口',
+      synchronizing: '正在补采缺失数据',
+      finalizing: '正在校验并发布',
+    };
+    status.textContent = `${labels[state]} · ${
+      dateTime(payload.updated_at)}`;
+    status.classList.add('running');
+    return;
+  }
+  if (state === 'failed') {
+    status.textContent = `补全失败 · ${dateTime(payload.finished_at)}`;
+    status.title = payload.error || '';
+    status.classList.add('error');
+    return;
+  }
+  if (state === 'ready') {
+    const count = repairDayCount(payload);
+    status.textContent = payload.result === 'already_complete'
+      ? `数据完整 · ${dateTime(payload.finished_at)}`
+      : `已补全 ${count} 个交易日 · ${dateTime(payload.finished_at)}`;
+    status.classList.add('ready');
+    return;
+  }
+  status.textContent = '可扫描最近300个交易日';
+}
+
+async function loadMaintenance() {
+  clearTimeout(maintenanceTimer);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${MAINTENANCE_API}/maintenance/status`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    renderMaintenance(payload);
+    if (MAINTENANCE_ACTIVE.has(payload.status)) {
+      maintenanceTimer = setTimeout(loadMaintenance, 3000);
+    }
+  } catch (_error) {
+    renderMaintenance(null, true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function repairMissingData() {
+  const button = $('#repair-data');
+  button.disabled = true;
+  $('#repair-status').textContent = '正在提交任务';
+  try {
+    const response = await fetch(`${MAINTENANCE_API}/maintenance/repair`, {
+      method: 'POST',
+      cache: 'no-store',
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    renderMaintenance(payload.maintenance);
+    maintenanceTimer = setTimeout(loadMaintenance, 1000);
+  } catch (error) {
+    const status = $('#repair-status');
+    status.textContent = `启动失败 · ${error.message}`;
+    status.className = 'repair-status error';
+    button.disabled = false;
+  }
+}
 
 function kpi(label, value, note = '', className = '') {
   return `<article class="kpi"><span>${escapeHtml(label)}</span>` +
@@ -1947,6 +2052,7 @@ function bind() {
   $('#stock-minute-date').addEventListener(
     'change', event => openMarketDate(event.target.value));
   $('#refresh').addEventListener('click', () => location.reload());
+  $('#repair-data').addEventListener('click', repairMissingData);
   window.addEventListener('resize', () => MARKET_CHART?.resize());
 }
 
@@ -1971,6 +2077,7 @@ async function start() {
     renderCandidates();
     refreshReviewDates(Boolean(LIVE_DATA));
     bind();
+    loadMaintenance();
   } catch (error) {
     $('#strategy-state').textContent = `读取失败：${error.message}`;
     $('#strategy-state').className = 'status error';
