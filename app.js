@@ -8,15 +8,19 @@ let REVIEW_DATES = [];
 let REVIEW_CURRENT = { recommendations: [], candidates: [] };
 let REVIEW_TOUCHED = false;
 const CAPITAL_STORAGE_KEY = 'awakening.strongMomentum.initialCapital';
-const MAINTENANCE_API = (
-  window.AWAKENING_MAINTENANCE_API
-  || document.querySelector('meta[name="awakening-maintenance-api"]')?.content
-  || 'http://127.0.0.1:8765'
-).replace(/\/+$/, '');
+const LOCAL_CONTROL_MODE = (
+  window.location.protocol === 'http:'
+  && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+);
+const MAINTENANCE_API = LOCAL_CONTROL_MODE
+  ? window.location.origin.replace(/\/+$/, '')
+  : null;
 const MAINTENANCE_ACTIVE = new Set([
   'queued', 'scanning', 'synchronizing', 'finalizing',
 ]);
 let maintenanceTimer = null;
+let operationsTimer = null;
+let operationsInFlight = false;
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -112,6 +116,7 @@ function renderMaintenance(payload, unavailable = false) {
 }
 
 async function loadMaintenance() {
+  if (!LOCAL_CONTROL_MODE) return;
   clearTimeout(maintenanceTimer);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2500);
@@ -134,6 +139,7 @@ async function loadMaintenance() {
 }
 
 async function repairMissingData() {
+  if (!LOCAL_CONTROL_MODE) return;
   const button = $('#repair-data');
   button.disabled = true;
   $('#repair-status').textContent = '正在提交任务';
@@ -160,6 +166,113 @@ function kpi(label, value, note = '', className = '') {
   return `<article class="kpi"><span>${escapeHtml(label)}</span>` +
     `<strong class="${className}">${escapeHtml(value)}</strong>` +
     `<small>${escapeHtml(note)}</small></article>`;
+}
+
+function renderOperations(payload) {
+  const panel = $('#operations-panel');
+  if (!panel) return;
+  panel.hidden = false;
+  if (!payload || payload.schema !== 'awakening-daily-review-v1') {
+    $('#operations-status').textContent = '状态不可读取';
+    $('#operations-status').className = 'status error';
+    $('#operations-summary').textContent = '本机服务未返回验收记录，请检查运行主机。';
+    $('#operations-updated').textContent = '--';
+    $('#operations-checks').textContent = '';
+    $('#comparison-kpis').textContent = '';
+    $('#comparison-notice').textContent = '';
+    $('#comparison-trades').textContent = '';
+    return;
+  }
+  const labels = { preopen: '盘前', intraday: '盘中', settling: '收盘整理',
+    postclose: '盘后', closed: '休市' };
+  const state = $('#operations-status');
+  state.textContent = payload.status === 'passed' ? '全部验收通过'
+    : payload.status === 'attention' ? `${payload.overdue_count}项待处理`
+      : '按时间等待后续作业';
+  state.className = `status ${payload.status === 'attention' ? 'error'
+    : payload.status === 'passed' ? 'ready' : ''}`;
+  $('#operations-updated').textContent = dateTime(payload.generated_at);
+  const period = payload.operating_period || {};
+  const readiness = payload.preflight_readiness || {};
+  const readinessText = value => value === true ? '通过' : value === false ? '未通过' : '无记录';
+  const sources = payload.market_sources || {};
+  const overdue = (payload.checks || []).filter(row =>
+    ['overdue', 'recovered_late'].includes(row.status));
+  $('#operations-summary').textContent = [
+    `${dayText(payload.date)} · ${labels[period.phase] || '--'}`,
+    `应有完整行情截至 ${dayText(period.expected_market_day)}`,
+    `worker最后记录 ${dateTime(payload.last_worker_update)}`,
+    `盘前主策略 ${readinessText(readiness.v555_primary)}；板块 ${
+      readinessText(readiness.strongest_sector_complement)}；历史覆盖 ${
+      readinessText(payload.preflight_market_archive_ready)}；完整归档 ${
+      readinessText(payload.preflight_archive_ready)}`,
+    `日线库截至 ${dayText(sources.through_day)}，权威来源占比 ${
+      pct(sources.authoritative_ratio)}`,
+    overdue.length ? `待处理：${overdue.map(row => row.label).join('、')}`
+      : '当前无超时项',
+  ].join(' ｜ ');
+  const checkLabels = { passed: '通过', overdue: '超时或证据不足',
+    recovered_late: '已恢复，但完成晚于截止时间', pending: '等待' };
+  $('#operations-checks').innerHTML = (payload.checks || []).map(row =>
+    `<div class="operations-check ${
+      ['overdue', 'recovered_late'].includes(row.status) ? 'error' : ''}">
+      <strong>${escapeHtml(row.label)}</strong>
+      <span>${escapeHtml(checkLabels[row.status] || row.status)}</span>
+      <small>${escapeHtml(row.detail)} · ${escapeHtml(dateTime(row.evidence_at))}</small>
+    </div>`).join('');
+  const comparison = payload.comparison || {};
+  const reconciliation = comparison.reconciliation || {};
+  const comparable = comparison.status === 'available';
+  $('#comparison-kpis').innerHTML = [
+    kpi('自动已实现净利润', money(reconciliation.automatic?.realized_profit),
+      '冻结成本的模拟账户', tone(reconciliation.automatic?.realized_profit)),
+    kpi('人工已实现净利润', money(reconciliation.manual?.realized_profit),
+      '本人回填，使用冻结模拟成本', tone(reconciliation.manual?.realized_profit)),
+    kpi('已实现收益差额', comparable ? money(comparison.realized_difference) : '--',
+      '人工减自动，不等于人工贡献', tone(comparison.realized_difference)),
+    kpi('未归因的已实现差额',
+      comparable ? money(comparison.unassigned_realized_difference) : '--',
+      '不同选股、日期或股数需要单独复核'),
+  ].join('');
+  $('#comparison-notice').textContent = [
+    !comparable ? '账户口径或账本核对不通过，暂停比较。'
+      : !comparison.manual_has_fills ? '人工账户尚无成交回填，当前差额不能用于评价人工决策。' : '',
+    comparison.notice || '',
+    comparison.fee_basis || '',
+    `自动记录 ${dateTime(comparison.automatic_updated_at)}；人工记录 ${
+      dateTime(comparison.manual_updated_at)}`,
+  ].filter(Boolean).join(' ');
+  const matches = comparison.matched_trades || [];
+  $('#comparison-trades').innerHTML = `<thead><tr>
+    <th>相同交易</th><th>买入 / 卖出日期</th><th>股数</th>
+    <th>买入价影响</th><th>卖出价影响</th><th>费用影响</th><th>净差额</th>
+    </tr></thead><tbody>${matches.length ? matches.map(row => `<tr>
+      <td>${escapeHtml(row.code)}</td><td>${escapeHtml(dayText(row.entry_day))} / ${
+        escapeHtml(dayText(row.exit_day))}</td><td>${escapeHtml(row.quantity)}</td>
+      ${['entry_price_effect', 'exit_price_effect', 'fee_effect', 'net_difference']
+        .map(key => `<td class="${tone(row[key])}">${money(row[key])}</td>`).join('')}
+    </tr>`).join('') : '<tr><td colspan="7">尚无可匹配的完整交易，保留未归因差额。</td></tr>'}</tbody>`;
+}
+
+async function loadOperations() {
+  clearTimeout(operationsTimer);
+  if (!LOCAL_CONTROL_MODE || document.hidden || operationsInFlight) return;
+  operationsInFlight = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch(`${MAINTENANCE_API}/operations/status`, {
+      cache: 'no-store', signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    renderOperations(await response.json());
+  } catch (_error) {
+    renderOperations(null);
+  } finally {
+    clearTimeout(timeout);
+    operationsInFlight = false;
+    if (!document.hidden) operationsTimer = setTimeout(loadOperations, 60000);
+  }
 }
 
 function scaledAccount(initialCapital, account, referenceCapital) {
@@ -2052,12 +2165,22 @@ function bind() {
   $('#stock-minute-date').addEventListener(
     'change', event => openMarketDate(event.target.value));
   $('#refresh').addEventListener('click', () => location.reload());
-  $('#repair-data').addEventListener('click', repairMissingData);
+  if (LOCAL_CONTROL_MODE) {
+    $('#repair-data').addEventListener('click', repairMissingData);
+  }
   window.addEventListener('resize', () => MARKET_CHART?.resize());
 }
 
 async function start() {
   try {
+    $('#local-controls').hidden = !LOCAL_CONTROL_MODE;
+    if (LOCAL_CONTROL_MODE) {
+      loadOperations();
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) clearTimeout(operationsTimer);
+        else loadOperations();
+      });
+    }
     const response = await fetch(`data.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     DATA = await response.json();
@@ -2077,7 +2200,7 @@ async function start() {
     renderCandidates();
     refreshReviewDates(Boolean(LIVE_DATA));
     bind();
-    loadMaintenance();
+    if (LOCAL_CONTROL_MODE) loadMaintenance();
   } catch (error) {
     $('#strategy-state').textContent = `读取失败：${error.message}`;
     $('#strategy-state').className = 'status error';
@@ -2210,8 +2333,8 @@ function renderLive(payload) {
   } else {
     finalBox.className = 'live-final cash';
     finalBox.innerHTML = '<strong>买入建议</strong><span>不新增</span>'
-      + `<small>${(automaticAccount.positions || []).length
-        >= (automaticAccount.maximum_positions ?? 2)
+      + `<small>${positions.length
+        >= (account.maximum_positions ?? 2)
         ? '两个持仓槽位均已占用' : '候选未通过完整门控'}</small>`;
   }
   const selectedV555 = payload.selected || [];

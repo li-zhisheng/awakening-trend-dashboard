@@ -4,12 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101417">
-  <meta name="awakening-maintenance-api" content="http://127.0.0.1:8765">
   <link rel="icon" href="data:,">
   <title>双策略选股看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261119-manual-repair-v1">
+  <link rel="stylesheet" href="styles.css?v=20261120-daily-review-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261119-manual-repair-v1" defer></script>
+  <script src="app.js?v=20261120-daily-review-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -23,10 +22,12 @@
     <div class="header-status">
       <span id="strategy-state" class="status">读取中</span>
       <time id="generated-at">--</time>
-      <span id="repair-status" class="repair-status">本机检测中</span>
-      <button id="repair-data" type="button" title="扫描并补全缺失数据">
-        <span aria-hidden="true">↻</span><span>补缺数据</span>
-      </button>
+      <span id="local-controls" class="local-controls" hidden>
+        <span id="repair-status" class="repair-status">连接本地后端</span>
+        <button id="repair-data" type="button" title="扫描并补全缺失数据">
+          <span aria-hidden="true">↻</span><span>补缺数据</span>
+        </button>
+      </span>
       <button id="refresh" type="button" title="刷新数据" aria-label="刷新数据">↻</button>
     </div>
   </header>
@@ -36,6 +37,24 @@
     <button data-view="account" type="button">策略总览</button>
     <button data-view="candidates" type="button">强势追涨历史候选</button>
   </nav>
+
+  <section id="operations-panel" class="operations-panel" hidden>
+    <div class="operations-head">
+      <strong>每日运行验收</strong>
+      <span id="operations-status" class="status">读取中</span>
+      <time id="operations-updated">--</time>
+    </div>
+    <p id="operations-summary" class="operations-summary"></p>
+    <details>
+      <summary>查看验收证据与账户差额</summary>
+      <div id="operations-checks" class="operations-checks"></div>
+      <div id="comparison-kpis" class="kpi-grid"></div>
+      <p id="comparison-notice" class="operations-summary"></p>
+      <div class="table-wrap">
+        <table id="comparison-trades"></table>
+      </div>
+    </details>
+  </section>
 
   <section id="live-banner" class="live-banner" hidden aria-live="polite">
     <div class="live-head">
