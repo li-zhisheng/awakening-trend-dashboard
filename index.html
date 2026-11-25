@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101417">
   <link rel="icon" href="data:,">
   <title>双策略选股看板</title>
-  <link rel="stylesheet" href="styles.css?v=20261120-daily-review-v1">
+  <link rel="stylesheet" href="styles.css?v=20261124-manual-ledger-v1">
   <script src="echarts.min.js"></script>
-  <script src="app.js?v=20261120-daily-review-v1" defer></script>
+  <script src="app.js?v=20261124-manual-ledger-v1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -54,6 +54,68 @@
         <table id="comparison-trades"></table>
       </div>
     </details>
+    <section id="manual-account-panel" class="manual-account-panel" hidden>
+      <div class="paper-head">
+        <div class="paper-head-title">
+          <strong>人工账户回填</strong>
+          <span id="paper-connection" class="paper-conn">读取中</span>
+        </div>
+        <span id="paper-updated">--</span>
+      </div>
+      <div id="paper-account-strip" class="paper-account-strip"></div>
+      <div class="paper-entry-grid">
+        <form id="manual-buy-form" class="paper-buy-form">
+          <strong>买入成交</strong>
+          <label class="paper-field">代码
+            <input name="code" inputmode="numeric" pattern="[0-9]{6}"
+                   maxlength="6" required placeholder="600000">
+          </label>
+          <label class="paper-field">名称
+            <input name="name" maxlength="16" placeholder="可不填">
+          </label>
+          <label class="paper-field">成交价
+            <input name="price" type="number" min="0.001" step="0.001"
+                   inputmode="decimal" required>
+          </label>
+          <label class="paper-field">股数
+            <input name="quantity" type="number" min="100" step="100"
+                   inputmode="numeric" required>
+          </label>
+          <label class="paper-field">成交时间
+            <input name="filled_at" type="datetime-local" required>
+          </label>
+          <button type="submit">保存买入</button>
+        </form>
+        <form id="manual-sell-form" class="paper-buy-form">
+          <strong>卖出成交</strong>
+          <label class="paper-field">持仓
+            <select name="code" required></select>
+          </label>
+          <label class="paper-field">成交价
+            <input name="price" type="number" min="0.001" step="0.001"
+                   inputmode="decimal" required>
+          </label>
+          <label class="paper-field">成交时间
+            <input name="filled_at" type="datetime-local" required>
+          </label>
+          <button type="submit">保存卖出</button>
+        </form>
+      </div>
+      <div id="paper-status" class="paper-status" role="status"
+           aria-live="polite"></div>
+      <div class="paper-section-title">
+        <strong>当前持仓</strong><span id="paper-position-count">0只</span>
+      </div>
+      <div id="paper-positions" class="table-wrap"></div>
+      <div class="paper-section-title">
+        <strong>待确认卖点</strong><span id="paper-pending-count">0笔</span>
+      </div>
+      <div id="paper-orders" class="paper-orders"></div>
+      <div class="paper-section-title">
+        <strong>最近成交</strong><span id="paper-fill-count">0笔</span>
+      </div>
+      <div class="table-wrap"><table id="paper-fills"></table></div>
+    </section>
   </section>
 
   <section id="live-banner" class="live-banner" hidden aria-live="polite">

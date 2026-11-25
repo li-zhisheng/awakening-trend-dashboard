@@ -21,6 +21,9 @@ const MAINTENANCE_ACTIVE = new Set([
 let maintenanceTimer = null;
 let operationsTimer = null;
 let operationsInFlight = false;
+let paperTimer = null;
+let paperInFlight = false;
+let PAPER_STATE = null;
 
 const $ = (selector) => document.querySelector(selector);
 const finiteNumber = (value) =>
@@ -272,6 +275,261 @@ async function loadOperations() {
     clearTimeout(timeout);
     operationsInFlight = false;
     if (!document.hidden) operationsTimer = setTimeout(loadOperations, 60000);
+  }
+}
+
+const bjtDatetimeLocal = (date = new Date()) => new Intl.DateTimeFormat(
+  'sv-SE',
+  {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  },
+).format(date).replace(' ', 'T');
+
+const bjtIso = value => value
+  ? `${value.length === 16 ? `${value}:00` : value}+08:00`
+  : null;
+
+function setPaperStatus(message, error = false) {
+  const node = $('#paper-status');
+  if (!node) return;
+  node.textContent = message;
+  node.className = `paper-status ${error ? 'err' : 'ok'}`;
+}
+
+function setManualFormDefaults() {
+  const value = bjtDatetimeLocal();
+  document.querySelectorAll(
+    '#manual-account-panel input[name="filled_at"]',
+  ).forEach((input) => {
+    if (!input.value) input.value = value;
+  });
+}
+
+function renderPaperAccount(payload, unavailable = false) {
+  const panel = $('#manual-account-panel');
+  if (!panel || !LOCAL_CONTROL_MODE) return;
+  $('#operations-panel').hidden = false;
+  panel.hidden = false;
+  const connection = $('#paper-connection');
+  if (
+    unavailable
+    || payload?.schema !== 'awakening-v555-paper-api-v5'
+    || !payload.manual
+  ) {
+    PAPER_STATE = null;
+    connection.textContent = '不可用';
+    connection.className = 'paper-conn offline';
+    $('#paper-account-strip').textContent = '人工账本暂时无法读取';
+    return;
+  }
+  PAPER_STATE = payload;
+  const account = payload.manual;
+  const summary = account.summary || {};
+  const positions = account.positions || [];
+  const orders = account.orders || [];
+  const pending = orders.filter(row => row.status === 'pending');
+  const fills = orders.filter(row => row.status === 'filled')
+    .sort((left, right) => String(right.filled_at).localeCompare(
+      String(left.filled_at),
+    ));
+  connection.textContent = '已连接';
+  connection.className = 'paper-conn online';
+  $('#paper-updated').textContent = dateTime(account.updated_at);
+  $('#paper-account-strip').innerHTML = [
+    `<span>现金 <strong>¥${money(summary.cash ?? account.cash)}</strong></span>`,
+    `<span>持仓市值 <strong>¥${money(summary.market_value)}</strong></span>`,
+    `<span>总资产 <strong>¥${money(summary.equity)}</strong></span>`,
+    `<span>累计收益 <strong class="${tone(summary.total_return)}">${
+      signedPct(summary.total_return)}</strong></span>`,
+    `<span>费用 <strong>¥${money(summary.fees_paid)}</strong></span>`,
+  ].join('');
+  const sell = $('#manual-sell-form');
+  const sellSelect = sell.elements.code;
+  const selected = sellSelect.value;
+  sellSelect.innerHTML = positions.length
+    ? positions.map(row => `<option value="${escapeHtml(row.code)}">${
+      escapeHtml(row.code)} ${escapeHtml(row.name || '')} · ${
+      escapeHtml(row.quantity)}股</option>`).join('')
+    : '<option value="">当前无持仓</option>';
+  if (positions.some(row => row.code === selected)) {
+    sellSelect.value = selected;
+  }
+  [...sell.elements].forEach((field) => {
+    if (field.type !== 'datetime-local') field.disabled = !positions.length;
+  });
+  $('#paper-position-count').textContent = `${positions.length}只`;
+  $('#paper-positions').innerHTML = positions.length
+    ? `<table><thead><tr><th>股票</th><th>买入时间</th><th>买入价</th>
+      <th>股数</th><th>最新标记</th><th>浮动盈亏</th></tr></thead>
+      <tbody>${positions.map(row => `<tr>
+        <td><strong>${escapeHtml(row.code)}</strong> ${
+          escapeHtml(row.name || '')}</td>
+        <td>${escapeHtml(dateTime(row.entry_quote_at || row.entry_day))}</td>
+        <td>¥${money(row.entry_price)}</td>
+        <td>${escapeHtml(row.quantity)}</td>
+        <td>¥${money(row.last_price)}</td>
+        <td class="${tone(
+          Number(row.last_price) * Number(row.quantity)
+          - Number(row.entry_notional) - Number(row.entry_fee)
+        )}">${money(
+          Number(row.last_price) * Number(row.quantity)
+          - Number(row.entry_notional) - Number(row.entry_fee)
+        )}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="paper-empty">当前空仓</div>';
+  $('#paper-pending-count').textContent = `${pending.length}笔`;
+  $('#paper-orders').innerHTML = pending.length
+    ? pending.map(row => `<div class="paper-order" data-order="${
+      escapeHtml(row.order_id)}">
+      <span class="paper-order-side ${escapeHtml(row.side)}">${
+        row.side === 'sell' ? '卖出' : '买入'}</span>
+      <span class="paper-order-code">${escapeHtml(row.code)}</span>
+      <span class="paper-order-name">${escapeHtml(row.name || '')}</span>
+      <span class="paper-order-ref">参考 ¥${money(row.reference_price)}</span>
+      <label class="paper-field">实际成交价
+        <input data-field="fill-price" type="number" min="0.001"
+               step="0.001" value="${escapeHtml(row.reference_price || '')}">
+      </label>
+      <label class="paper-field">成交时间
+        <input data-field="fill-time" type="datetime-local"
+               value="${escapeHtml(bjtDatetimeLocal())}">
+      </label>
+      <button type="button" data-action="fill">确认成交</button>
+      <button type="button" class="ghost" data-action="reject">未成交</button>
+    </div>`).join('')
+    : '<div class="paper-empty">无待确认卖点</div>';
+  $('#paper-fill-count').textContent = `${fills.length}笔`;
+  $('#paper-fills').innerHTML = `<thead><tr><th>方向</th><th>股票</th>
+    <th>成交时间</th><th>成交价</th><th>股数</th><th>费用</th></tr></thead>
+    <tbody>${fills.length ? fills.slice(0, 20).map(row => `<tr>
+      <td class="${row.side === 'buy' ? 'profit' : 'loss'}">${
+        row.side === 'buy' ? '买入' : '卖出'}</td>
+      <td>${escapeHtml(row.code)} ${escapeHtml(row.name || '')}</td>
+      <td>${escapeHtml(dateTime(row.filled_at))}</td>
+      <td>¥${money(row.fill_price)}</td>
+      <td>${escapeHtml(row.quantity)}</td>
+      <td>¥${money(row.fee)}</td></tr>`).join('')
+      : '<tr><td colspan="6">尚无人工成交</td></tr>'}</tbody>`;
+  document.querySelectorAll('#paper-orders [data-action]').forEach(
+    button => button.addEventListener('click', handlePendingOrder),
+  );
+  setManualFormDefaults();
+}
+
+async function loadPaperState() {
+  clearTimeout(paperTimer);
+  if (
+    !LOCAL_CONTROL_MODE
+    || paperInFlight
+    || (document.hidden && PAPER_STATE)
+  ) return;
+  paperInFlight = true;
+  try {
+    const response = await fetch(`${MAINTENANCE_API}/state`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    renderPaperAccount(await response.json());
+  } catch (_error) {
+    renderPaperAccount(null, true);
+  } finally {
+    paperInFlight = false;
+    if (!document.hidden) paperTimer = setTimeout(loadPaperState, 60000);
+  }
+}
+
+async function paperRequest(path, body) {
+  const response = await fetch(`${MAINTENANCE_API}${path}`, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  renderPaperAccount(payload);
+  const report = payload.report_refresh || {};
+  setPaperStatus(
+    report.status === 'delivered'
+      ? '成交已保存，盘后收益更新已推送'
+      : report.status === 'error' || report.status === 'delivery_failed'
+        ? '成交已保存，收益更新待核验'
+        : '成交已保存',
+    ['error', 'delivery_failed'].includes(report.status),
+  );
+  loadOperations();
+  return payload;
+}
+
+async function submitManualTrade(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!form.reportValidity()) return;
+  const fields = new FormData(form);
+  const side = form.id === 'manual-buy-form' ? 'buy' : 'sell';
+  const quantity = Number(fields.get('quantity'));
+  if (side === 'buy' && (!Number.isInteger(quantity) || quantity % 100)) {
+    setPaperStatus('买入股数必须为100股的整数倍', true);
+    return;
+  }
+  const body = {
+    code: String(fields.get('code') || '').trim(),
+    price: Number(fields.get('price')),
+    filled_at: bjtIso(String(fields.get('filled_at') || '')),
+  };
+  if (side === 'buy') {
+    body.name = String(fields.get('name') || '').trim();
+    body.quantity = quantity;
+  }
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
+  setPaperStatus('正在保存');
+  try {
+    await paperRequest(`/manual/${side}`, body);
+    form.reset();
+    setManualFormDefaults();
+  } catch (error) {
+    setPaperStatus(`保存失败：${error.message}`, true);
+  } finally {
+    submit.disabled = (
+      side === 'sell'
+      && !(PAPER_STATE?.manual?.positions || []).length
+    );
+  }
+}
+
+async function handlePendingOrder(event) {
+  const button = event.currentTarget;
+  const row = button.closest('.paper-order');
+  const orderId = row.dataset.order;
+  button.disabled = true;
+  try {
+    if (button.dataset.action === 'reject') {
+      await paperRequest('/manual/reject', {
+        order_id: orderId,
+        reason: 'manual_not_filled',
+      });
+      return;
+    }
+    const price = Number(row.querySelector('[data-field="fill-price"]').value);
+    const filledAt = row.querySelector('[data-field="fill-time"]').value;
+    if (!Number.isFinite(price) || price <= 0 || !filledAt) {
+      throw new Error('请填写实际成交价和时间');
+    }
+    await paperRequest('/manual/fill', {
+      order_id: orderId,
+      price,
+      filled_at: bjtIso(filledAt),
+    });
+  } catch (error) {
+    setPaperStatus(`处理失败：${error.message}`, true);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -2167,6 +2425,8 @@ function bind() {
   $('#refresh').addEventListener('click', () => location.reload());
   if (LOCAL_CONTROL_MODE) {
     $('#repair-data').addEventListener('click', repairMissingData);
+    $('#manual-buy-form').addEventListener('submit', submitManualTrade);
+    $('#manual-sell-form').addEventListener('submit', submitManualTrade);
   }
   window.addEventListener('resize', () => MARKET_CHART?.resize());
 }
@@ -2177,8 +2437,13 @@ async function start() {
     if (LOCAL_CONTROL_MODE) {
       loadOperations();
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden) clearTimeout(operationsTimer);
-        else loadOperations();
+        if (document.hidden) {
+          clearTimeout(operationsTimer);
+          clearTimeout(paperTimer);
+        } else {
+          loadOperations();
+          loadPaperState();
+        }
       });
     }
     const response = await fetch(`data.json?t=${Date.now()}`, { cache: 'no-store' });
@@ -2200,7 +2465,10 @@ async function start() {
     renderCandidates();
     refreshReviewDates(Boolean(LIVE_DATA));
     bind();
-    if (LOCAL_CONTROL_MODE) loadMaintenance();
+    if (LOCAL_CONTROL_MODE) {
+      loadMaintenance();
+      loadPaperState();
+    }
   } catch (error) {
     $('#strategy-state').textContent = `读取失败：${error.message}`;
     $('#strategy-state').className = 'status error';

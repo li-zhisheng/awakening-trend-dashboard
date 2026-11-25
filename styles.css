@@ -750,7 +750,8 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   .paper-field,
   .paper-field input,
   .paper-buy-form input,
-  .paper-buy-form [data-field="buy-filled-at"] { width: 100%; }
+  .paper-buy-form input[type="datetime-local"],
+  .paper-field select { width: 100%; }
   .paper-section-title { align-items: flex-start; flex-direction: column; }
 
 
@@ -991,6 +992,17 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   background: rgba(148, 163, 168, 0.05);
   font-size: 12px;
 }
+.manual-account-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.manual-account-panel[hidden] { display: none; }
+.paper-entry-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+  gap: 10px;
+}
 .paper-head {
   display: flex;
   flex-wrap: wrap;
@@ -1028,6 +1040,12 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: #e6edf0;
   font-size: 12px;
 }
+.paper-field select {
+  min-width: 180px;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
 .paper-order button,
 .paper-position button,
 .paper-buy-form button {
@@ -1038,6 +1056,12 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
   color: #e6edf0;
   cursor: pointer;
   font-size: 12px;
+}
+.paper-buy-form button:disabled,
+.paper-buy-form input:disabled,
+.paper-buy-form select:disabled {
+  cursor: not-allowed;
+  opacity: .5;
 }
 .paper-order button:hover,
 .paper-position button:hover,
@@ -1115,7 +1139,7 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
 }
 .paper-buy-form .paper-field { display: grid; gap: 5px; }
 .paper-buy-form input { width: 120px; }
-.paper-buy-form [data-field="buy-filled-at"] { width: 190px; }
+.paper-buy-form input[type="datetime-local"] { width: 190px; }
 .paper-positions { display: grid; gap: 8px; }
 .paper-position { justify-content: flex-end; }
 .paper-position > div { min-width: 220px; margin-right: auto; }
@@ -1128,6 +1152,7 @@ dialog::backdrop { background: rgba(4, 8, 10, .78); }
 }
 
 @media (max-width: 860px) {
+  .paper-entry-grid { grid-template-columns: 1fr; }
   .live-cards { grid-template-columns: 1fr; }
   .live-final { grid-template-columns: auto 1fr; }
   .live-final small { grid-column: 1 / -1; }
